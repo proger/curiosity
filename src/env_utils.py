@@ -43,7 +43,7 @@ class Environment:
         self.episode_return = torch.zeros(1, 1)
         self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
         self.episode_win = torch.zeros(1, 1, dtype=torch.int32)
-        initial_done = torch.ones(1, 1, dtype=torch.uint8)
+        initial_done = torch.ones(1, 1, dtype=torch.bool)
         if self.fix_seed:
             self.gym_env.seed(seed=self.env_seed)
         initial_frame = _format_observation(self.gym_env.reset())

@@ -48,7 +48,7 @@ python setup.py install
 ```
 cd impact-driven-exploration
 
-OMP_NUM_THREADS=1 python main.py --model ride --env MiniGrid-MultiRoom-N7-S4-v0 --total_frames 30000000 --intrinsic_reward_coef 0.1 --entropy_cost 0.0005
+OMP_NUM_THREADS=1 python main.py --model ride --env MiniGrid-MultiRoom-N7-S4-v0 --total_frames 30000000 --intrinsic_reward_coef 0.1 --entropy_cost 0.0005 --num_actors 3
 
 OMP_NUM_THREADS=1 python main.py --model ride --env MiniGrid-MultiRoomNoisyTV-N7-S4-v0 --total_frames 30000000 --intrinsic_reward_coef 0.1 --entropy_cost 0.0005
 

@@ -24,7 +24,7 @@ import gym_super_mario_bros
 from nes_py.wrappers import JoypadSpace
 from gym_super_mario_bros.actions import COMPLEX_MOVEMENT
 
-import vizdoomgym
+#import vizdoomgym
 
 
 COMPLETE_MOVEMENT = [
@@ -116,9 +116,9 @@ def get_batch(free_queue: mp.SimpleQueue,
 def create_buffers(obs_shape, num_actions, flags) -> Buffers:
     T = flags.unroll_length
     specs = dict(
-        frame=dict(size=(T + 1, *obs_shape), dtype=torch.uint8),
+        frame=dict(size=(T + 1, *obs_shape), dtype=torch.bool),
         reward=dict(size=(T + 1,), dtype=torch.float32),
-        done=dict(size=(T + 1,), dtype=torch.uint8),
+        done=dict(size=(T + 1,), dtype=torch.bool),
         episode_return=dict(size=(T + 1,), dtype=torch.float32),
         episode_step=dict(size=(T + 1,), dtype=torch.int32),
         last_action=dict(size=(T + 1,), dtype=torch.int64),
@@ -128,7 +128,7 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
         episode_win=dict(size=(T + 1,), dtype=torch.int32),
         carried_obj=dict(size=(T + 1,), dtype=torch.int32),
         carried_col=dict(size=(T + 1,), dtype=torch.int32),
-        partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.uint8),
+        partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.bool),
         episode_state_count=dict(size=(T + 1, ), dtype=torch.float32),
         train_state_count=dict(size=(T + 1, ), dtype=torch.float32),
     )

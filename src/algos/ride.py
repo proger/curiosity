@@ -227,7 +227,8 @@ def train(flags):
         initial_agent_state_buffers.append(state)
     
     actor_processes = []
-    ctx = mp.get_context('fork')
+    #ctx = mp.get_context('fork')
+    ctx = mp.get_context('spawn')
     free_queue = ctx.SimpleQueue()
     full_queue = ctx.SimpleQueue()
     
