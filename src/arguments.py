@@ -105,3 +105,7 @@ parser.add_argument('--use_fullobs_policy', action='store_true',
                     help='Use a full view of the environment as input to the policy network.')
 parser.add_argument('--use_fullobs_intrinsic', action='store_true',
                     help='Use a full view of the environment for computing the intrinsic reward.')
+
+# trajectory embedding
+parser.add_argument('--trajectory_embed', action='store_true',
+                    help='Use trajectory embedding rather than state embedding')

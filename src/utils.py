@@ -115,6 +115,7 @@ def get_batch(free_queue: mp.SimpleQueue,
 
 def create_buffers(obs_shape, num_actions, flags) -> Buffers:
     T = flags.unroll_length
+    # TODO: add a key 'trajectory'
     specs = dict(
         frame=dict(size=(T + 1, *obs_shape), dtype=torch.bool),
         reward=dict(size=(T + 1,), dtype=torch.float32),
@@ -129,9 +130,30 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
         carried_obj=dict(size=(T + 1,), dtype=torch.int32),
         carried_col=dict(size=(T + 1,), dtype=torch.int32),
         partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.bool),
-        episode_state_count=dict(size=(T + 1, ), dtype=torch.float32),
-        train_state_count=dict(size=(T + 1, ), dtype=torch.float32),
+        episode_state_count=dict(size=(T + 1,), dtype=torch.float32),
+        train_state_count=dict(size=(T + 1,), dtype=torch.float32),
     )
+    if flags.trajectory_embed:
+        specs = dict(
+            partial_trajectory=dict(size=(T + 1, 7, 7, 3*4), dtype=torch.bool),
+            frame=dict(size=(T + 1, *obs_shape), dtype=torch.bool),
+            reward=dict(size=(T + 1,), dtype=torch.float32),
+            done=dict(size=(T + 1,), dtype=torch.bool),
+            episode_return=dict(size=(T + 1,), dtype=torch.float32),
+            episode_step=dict(size=(T + 1,), dtype=torch.int32),
+            last_action=dict(size=(T + 1,), dtype=torch.int64),
+            policy_logits=dict(size=(T + 1, num_actions), dtype=torch.float32),
+            baseline=dict(size=(T + 1,), dtype=torch.float32),
+            action=dict(size=(T + 1,), dtype=torch.int64),
+            episode_win=dict(size=(T + 1,), dtype=torch.int32),
+            carried_obj=dict(size=(T + 1,), dtype=torch.int32),
+            carried_col=dict(size=(T + 1,), dtype=torch.int32),
+            partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.bool),
+            episode_state_count=dict(size=(T + 1,), dtype=torch.float32),
+            train_state_count=dict(size=(T + 1,), dtype=torch.float32),
+        )
+    # TODO: check all usage of iterating the key, in case that trajectory is used in mistake
+
     buffers: Buffers = {key: [] for key in specs}
     for _ in range(flags.num_buffers):
         for key in buffers:
@@ -157,6 +179,12 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
         env = Environment(gym_env, fix_seed=flags.fix_seed, env_seed=flags.env_seed)
 
         env_output = env.initial()
+        # TODO: duplicate 4 initial state, add in buffer
+        if flags.trajectory_embed:
+            initial_obs = env_output['partial_obs']
+            #print("initial observation shape: ", initial_obs.shape)
+            trajectory = torch.cat([initial_obs for _ in range(4)], dim=4)
+
         agent_state = model.initial_state(batch_size=1)
         agent_output, unused_state = model(env_output, agent_state)
 
@@ -165,6 +193,12 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
             if index is None:
                 break
 
+            # TODO: duplicate 4 initial state, add in buffer
+            if flags.trajectory_embed:
+                #print("trajectory shape: ", trajectory.shape)
+                #print('ph: ', buffers['trajectory'][index][0, ...].shape)
+                buffers['partial_trajectory'][index][0, ...] = trajectory
+            # initial_obs = env_output
             # Write old rollout end.
             for key in env_output:
                 buffers[key][index][0, ...] = env_output[key]
@@ -210,6 +244,15 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
                 env_output = env.step(agent_output['action'])
 
                 timings.time('step')
+                # TODO: make it a length 4 trajectories
+
+                if flags.trajectory_embed:
+                    #print("env_output[frame]: ", env_output['frame'].shape)
+                    #print("place holder: ", buffers['trajectory'][index][t + 1, ...].shape)
+                    trajectory = torch.cat([trajectory[:, :, :, :, 3:], env_output['partial_obs']], dim=4)
+
+                    #print("new trajectory: ", trajectory.shape)
+                    buffers['partial_trajectory'][index][t + 1, ...] = trajectory
 
                 for key in env_output:
                     buffers[key][index][t + 1, ...] = env_output[key]

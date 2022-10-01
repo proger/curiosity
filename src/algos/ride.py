@@ -28,6 +28,7 @@ import src.losses as losses
 from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
 
+MinigridTrajectoryEmbeddingNet = models.MinigridTrajectoryEmbeddingNet
 MinigridStateEmbeddingNet = models.MinigridStateEmbeddingNet
 MinigridForwardDynamicsNet = models.MinigridForwardDynamicsNet
 MinigridInverseDynamicsNet = models.MinigridInverseDynamicsNet
@@ -69,8 +70,14 @@ def learn(actor_model,
             next_state_emb = state_embedding_model(batch, next_state=True)\
                     .reshape(flags.unroll_length, flags.batch_size, 128)
         else:
-            state_emb = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
-            next_state_emb = state_embedding_model(batch['partial_obs'][1:].to(device=flags.device))
+            if flags.trajectory_embed:
+                #print("track input size for tau: ", batch['partial_obs'][:-1].to(device=flags.device).shape)
+                state_emb = state_embedding_model(batch['partial_trajectory'][:-1].to(device=flags.device))
+                next_state_emb = state_embedding_model(batch['partial_trajectory'][1:].to(device=flags.device))
+            else:
+                #print("track input size: ", batch['partial_obs'][:-1].to(device=flags.device).shape)
+                state_emb = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
+                next_state_emb = state_embedding_model(batch['partial_obs'][1:].to(device=flags.device))
         
         pred_next_state_emb = forward_dynamics_model(
             state_emb, batch['action'][1:].to(device=flags.device))
@@ -89,6 +96,7 @@ def learn(actor_model,
         inverse_dynamics_loss = flags.inverse_loss_coef * \
             losses.compute_inverse_dynamics_loss(pred_actions, batch['action'][1:])
 
+        # policy learning
         learner_outputs, unused_state = model(batch, initial_agent_state)
     
         bootstrap_value = learner_outputs['baseline'][-1]
@@ -145,7 +153,7 @@ def learn(actor_model,
             'inverse_dynamics_loss': inverse_dynamics_loss.item(),
         }
         
-        scheduler.step()
+        #scheduler.step()
         optimizer.zero_grad()
         state_embedding_optimizer.zero_grad()
         forward_dynamics_optimizer.zero_grad()
@@ -159,6 +167,7 @@ def learn(actor_model,
         state_embedding_optimizer.step()
         forward_dynamics_optimizer.step()
         inverse_dynamics_optimizer.step()
+        scheduler.step()
 
         actor_model.load_state_dict(model.state_dict())
         return stats
@@ -194,13 +203,18 @@ def train(flags):
         if flags.use_fullobs_policy:
             model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)                        
         else:
-            model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)     
+            model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)
+
         if flags.use_fullobs_intrinsic:
             state_embedding_model = FullObsMinigridStateEmbeddingNet(env.observation_space.shape)\
                 .to(device=flags.device) 
-        else:                   
-            state_embedding_model = MinigridStateEmbeddingNet(env.observation_space.shape)\
-                .to(device=flags.device) 
+        else:
+            if(flags.trajectory_embed):
+                state_embedding_model = MinigridTrajectoryEmbeddingNet(env.observation_space.shape) \
+                    .to(device=flags.device)
+            else:
+                state_embedding_model = MinigridStateEmbeddingNet(env.observation_space.shape)\
+                    .to(device=flags.device)
         forward_dynamics_model = MinigridForwardDynamicsNet(env.action_space.n)\
             .to(device=flags.device) 
         inverse_dynamics_model = MinigridInverseDynamicsNet(env.action_space.n)\
