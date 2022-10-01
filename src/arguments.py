@@ -62,6 +62,8 @@ parser.add_argument('--discounting', default=0.99, type=float,
 # Optimizer settings.
 parser.add_argument('--learning_rate', default=0.0001, type=float,
                     metavar='LR', help='Learning rate.')
+parser.add_argument('--policy_learning_rate', default=0.0001, type=float,
+                    metavar='LR', help='Learning rate.')
 parser.add_argument('--alpha', default=0.99, type=float,
                     help='RMSProp smoothing constant.')
 parser.add_argument('--momentum', default=0, type=float,
