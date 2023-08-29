@@ -1,5 +1,7 @@
 # Agents with intrinsic rewards
 
+Read more about curiosity in https://people.idsia.ch/~juergen/artificial-curiosity-since-1990.html
+
 ```bash
 python -m venv .venv
 .venv/bin/pip install wandb
