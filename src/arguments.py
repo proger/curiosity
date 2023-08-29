@@ -30,7 +30,7 @@ parser.add_argument('--checkpoint_num_frames', default=10000000, type=int,
 # Training settings.
 parser.add_argument('--disable_checkpoint', action='store_true',
                     help='Disable saving checkpoint.')
-parser.add_argument('--savedir', default='../',
+parser.add_argument('--savedir', default='exp/',
                     help='Root dir where experiment data will be saved.')
 parser.add_argument('--num_actors', default=32, type=int, metavar='N',
                     help='Number of actors.')
