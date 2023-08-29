@@ -1,4 +1,21 @@
-# RIDE: Rewarding Impact-Driven Exploration for Procedurally-Generated Environments
+# Agents with intrinsic rewards
+
+```
+python -m venv .venv
+.venv/bin/pip install virtualenv
+.venv/bin/pip install -r new_requirements.txt -I
+.venv/bin/pip install -e ./gym-minigrid
+```
+
+To test [RND](https://openai.com/research/reinforcement-learning-with-prediction-based-rewards) agent try:
+
+```
+env OMP_NUM_THREADS=1 .venv/bin/python main.py --model rnd --env MiniGrid-MultiRoom-N7-S4-v0 --total_frames 100000000 --intrinsic_reward_coef 0.5 --entropy_cost 0.001
+```
+
+Original README contents below:
+
+## RIDE: Rewarding Impact-Driven Exploration for Procedurally-Generated Environments
 
 This is an implementation of the method proposed in 
 
