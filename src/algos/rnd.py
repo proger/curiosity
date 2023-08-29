@@ -13,6 +13,7 @@ import timeit
 import pprint
 
 import numpy as np
+import wandb
 
 import torch
 from torch import multiprocessing as mp
@@ -141,6 +142,9 @@ def learn(actor_model,
 def train(flags):  
     if flags.xpid is None:
         flags.xpid = 'curiosity-%s' % time.strftime('%Y%m%d-%H%M%S')
+
+    wandb.init(config=flags)
+
     plogger = file_writer.FileWriter(
         xpid=flags.xpid,
         xp_args=flags.__dict__,
@@ -273,6 +277,8 @@ def train(flags):
             with lock:
                 to_log = dict(frames=frames)
                 to_log.update({k: stats[k] for k in stat_keys})
+                if wandb.run is not None:
+                    wandb.log(to_log)
                 plogger.log(to_log)
                 frames += T * B
 
