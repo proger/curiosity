@@ -107,6 +107,14 @@ class ImgObsWrapper(gym.core.ObservationWrapper):
         super().__init__(env)
         self.observation_space = env.observation_space.spaces['image']
 
+    @property
+    def actions(self):
+        return self.env.actions
+
+    @property
+    def step_count(self):
+        return self.env.step_count
+
     def observation(self, obs):
         return obs['image']
 
@@ -204,6 +212,14 @@ class RGBImgPartialObsWrapper(gym.core.ObservationWrapper):
             shape=(obs_shape[0] * tile_size, obs_shape[1] * tile_size, 3),
             dtype='uint8'
         )
+
+    @property
+    def actions(self):
+        return self.env.actions
+
+    @property
+    def step_count(self):
+        return self.env.step_count
 
     def observation(self, obs):
         env = self.unwrapped

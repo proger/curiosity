@@ -17,6 +17,13 @@ ulimit -n 64000 # prevents RuntimeError: unable to open shared memory object </t
 env OMP_NUM_THREADS=1 .venv/bin/python main.py --model rnd --env MiniGrid-MultiRoom-N7-S4-v0 --total_frames 100000000 --intrinsic_reward_coef 0.1 --entropy_cost 0.0001
 ```
 
+To try the environment do:
+
+```
+.venv/bin/python gym-minigrid/manual_control.py # whole map view
+.venv/bin/python gym-minigrid/manual_control.py --agent_view
+```
+
 Original README contents below:
 
 ## RIDE: Rewarding Impact-Driven Exploration for Procedurally-Generated Environments
