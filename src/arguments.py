@@ -68,7 +68,7 @@ parser.add_argument('--alpha', default=0.99, type=float,
                     help='RMSProp smoothing constant.')
 parser.add_argument('--momentum', default=0, type=float,
                     help='RMSProp momentum.')
-parser.add_argument('--epsilon', default=1e-5, type=float,
+parser.add_argument('--epsilon', default=0.01, type=float,
                     help='RMSProp epsilon.')
 
 # Exploration Settings.
