@@ -352,3 +352,77 @@ def train(flags):
     checkpoint(frames)
     plogger.close()
 
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser('Curiosity-driven Exploration')
+    parser.add_argument('--env', default='MiniGrid-MultiRoom-N7-S4-v0')
+    parser.add_argument('--device', default='cuda')
+    parser.add_argument('--unroll_length', default=100, type=int, metavar='T',
+                    help='The unroll length (time dimension).')
+    parser.add_argument('--trajectory_embed', action='store_true',
+                    help='Use trajectory embedding rather than state embedding')
+    parser.add_argument('--num_buffers', default=1, type=int,
+                    metavar='N', help='Number of shared-memory buffers.')
+    parser.add_argument('--num_actors', default=32, type=int, metavar='N',
+                    help='Number of actors.')
+    parser.add_argument('--num_input_frames', default=1, type=int,
+                    help='Number of input frames to the model and state embedding including the current frame \
+                    When num_input_frames > 1, it will also take the previous num_input_frames - 1 frames as input.')
+    parser.add_argument('--fix_seed', action='store_true',
+                        help='Fix the environment seed so that it is \
+                        no longer procedurally generated but rather the same layout every episode.')
+    parser.add_argument('--env_seed', default=1, type=int,
+                        help='The seed used to generate the environment if we are using a \
+                        singleton (i.e. not procedurally generated) environment.')
+    parser.add_argument('--model', default='rnd', help='Model used for training the agent.')
+    parser.add_argument('checkpoint')
+    flags = parser.parse_args()
+
+    env = create_env(flags)
+
+    model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(flags.device)
+    model.load_state_dict(torch.load(flags.checkpoint)['model_state_dict'])
+    model.share_memory()
+
+    buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
+
+    initial_agent_state_buffers = []
+    for _ in range(flags.num_buffers):
+        state = model.initial_state(batch_size=1)
+        for t in state:
+            t.share_memory_()
+        initial_agent_state_buffers.append(state)
+
+    ctx = mp.get_context('fork')
+    free_queue = ctx.SimpleQueue()
+    full_queue = ctx.SimpleQueue()
+
+    for m in range(flags.num_buffers):
+        free_queue.put(m)
+    free_queue.put(None)
+
+    episode_state_count_dict = dict()
+    train_state_count_dict = dict()
+    act(0, free_queue, full_queue, model, buffers,
+        episode_state_count_dict, train_state_count_dict,
+        initial_agent_state_buffers, flags)
+
+    print(buffers)
+
+    import matplotlib.pyplot as plt
+    from celluloid import Camera
+    fig = plt.figure()
+    camera = Camera(fig)
+    env.seed(flags.env_seed)
+    obs = env.reset()
+    img = env.render('rgb_array', tile_size=32)
+    plt.imshow(img)
+    camera.snap()
+    for action in buffers['action'][0].tolist():
+        obs, reward, done, info = env.step(action)
+        img = env.render('rgb_array', tile_size=32)
+        plt.imshow(img)
+        camera.snap()
+    animation = camera.animate()
+    animation.save('animation.mp4')

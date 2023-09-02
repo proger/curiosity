@@ -2,26 +2,41 @@
 
 Read more about curiosity in https://people.idsia.ch/~juergen/artificial-curiosity-since-1990.html
 
+Environment setup.
+
 ```bash
 python -m venv .venv
-.venv/bin/pip install wandb
+.venv/bin/pip install wandb celluloid
 .venv/bin/pip install virtualenv
 .venv/bin/pip install -r new_requirements.txt -I
 .venv/bin/pip install -e ./gym-minigrid
 ```
 
-To test [RND](https://openai.com/research/reinforcement-learning-with-prediction-based-rewards) agent try:
+Train [RND](https://openai.com/research/reinforcement-learning-with-prediction-based-rewards) agent.
 
 ```bash
 ulimit -n 64000 # prevents RuntimeError: unable to open shared memory object </torch_13695_1684771047_984> in read-write mode: Too many open files (24)
 env OMP_NUM_THREADS=1 .venv/bin/python main.py --model rnd --env MiniGrid-MultiRoom-N7-S4-v0 --total_frames 100000000 --intrinsic_reward_coef 0.1 --entropy_cost 0.0001
 ```
 
-To try the environment do (use `ssh -X` with XQuartz running on a Mac if needed):
+Try the environment with manual control. Use `ssh -X` with XQuartz running on a Mac if needed.
 
 ```
 .venv/bin/python gym-minigrid/manual_control.py # whole map view
 .venv/bin/python gym-minigrid/manual_control.py --agent_view
+```
+
+Profile the environment. `py-spy` that write flamegraph SVGs on disk. This reveals that the experience collection agents are spending most of their time running their policies on CPU:
+
+```
+pip install py-spy
+py-spy record --pid 3081044 -r 33 -s
+```
+
+Perform a rollout from a trained policy. This writes `animation.mp4` on disk.
+
+```
+python -m src.algos.rnd exp/curiosity-20230901-121847/model.tar --fix_seed
 ```
 
 Original README contents below:
