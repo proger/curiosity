@@ -5,3 +5,5 @@ __pycache__/
 .venv/
 exp/
 wandb/
+*.mp4
+*.svg
