@@ -26,7 +26,7 @@ Try the environment with manual control. Use `ssh -X` with XQuartz running on a 
 .venv/bin/python gym-minigrid/manual_control.py --agent_view
 ```
 
-Profile the environment. `py-spy` that write flamegraph SVGs on disk. This reveals that the experience collection agents are spending most of their time running their policies on CPU:
+Profile the environment. `py-spy` that write flamegraph SVGs on disk. This revealed that the original experience collection agents were spending most of their time running their policies on CPU. Another use let me know that actor workers are waiting a lot of time synchronous cuda transfer of useless tensors.
 
 ```
 pip install py-spy

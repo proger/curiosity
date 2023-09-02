@@ -43,11 +43,11 @@ class Environment:
         self.episode_return = torch.zeros(1, 1)
         self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
         self.episode_win = torch.zeros(1, 1, dtype=torch.int32)
-        initial_done = torch.ones(1, 1, dtype=torch.bool)
+        self.last_done = torch.ones(1, 1, dtype=torch.bool).pin_memory()
         if self.fix_seed:
             self.gym_env.seed(seed=self.env_seed)
         initial_frame = _format_observation(self.gym_env.reset())
-        partial_obs = _format_observation(self.get_partial_obs())
+        self.last_partial_obs = _format_observation(self.get_partial_obs()).pin_memory()
 
         if self.gym_env.env.env.carrying:
             carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.env.env.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.env.env.carrying.type]]])
@@ -57,13 +57,13 @@ class Environment:
         return dict(
             frame=initial_frame,
             reward=initial_reward,
-            done=initial_done,
+            done=self.last_done,
             episode_return=self.episode_return,
             episode_step=self.episode_step,
             episode_win=self.episode_win,
             carried_col = carried_col,
             carried_obj = carried_obj, 
-            partial_obs=partial_obs
+            partial_obs=self.last_partial_obs
             )
         
     def step(self, action):
@@ -91,8 +91,8 @@ class Environment:
 
         frame = _format_observation(frame)
         reward = torch.tensor(reward).view(1, 1)
-        done = torch.tensor(done).view(1, 1)
-        partial_obs = _format_observation(self.get_partial_obs())
+        self.last_done[:] = done
+        self.last_partial_obs[:, :, :, :] = _format_observation(self.get_partial_obs())
         
         if self.gym_env.env.env.carrying:
             carried_col, carried_obj = torch.LongTensor([[COLOR_TO_IDX[self.gym_env.env.env.carrying.color]]]), torch.LongTensor([[OBJECT_TO_IDX[self.gym_env.env.env.carrying.type]]])
@@ -103,13 +103,13 @@ class Environment:
         return dict(
             frame=frame,
             reward=reward,
-            done=done,
+            done=self.last_done,
             episode_return=episode_return,
             episode_step = episode_step,
             episode_win = episode_win,
             carried_col = carried_col,
             carried_obj = carried_obj, 
-            partial_obs=partial_obs
+            partial_obs=self.last_partial_obs
             )
 
     def get_full_obs(self):
