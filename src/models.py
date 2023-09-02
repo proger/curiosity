@@ -302,8 +302,9 @@ class MinigridPolicyNet(nn.Module):
 
 
     def initial_state(self, batch_size):
+        device = next(self.parameters()).device
         return tuple(torch.zeros(self.core.num_layers, batch_size, 
-                                self.core.hidden_size) for _ in range(2))
+                                 self.core.hidden_size, device=device) for _ in range(2))
 
 
     def forward(self, inputs, core_state=()):

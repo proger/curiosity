@@ -172,20 +172,20 @@ def train(flags):
 
     if 'MiniGrid' in flags.env: 
         if flags.use_fullobs_policy:
-            model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)                        
+            model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(device=flags.device)
         else:
-            model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)    
-        if flags.use_fullobs_intrinsic:                        
-            random_target_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
-            predictor_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)             
+            model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(device=flags.device)
+        if flags.use_fullobs_intrinsic:
+            random_target_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+            predictor_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
         else:
-            random_target_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
-            predictor_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
+            random_target_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+            predictor_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
     else:
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
-        random_target_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
-        predictor_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device) 
-    
+        random_target_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+        predictor_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
     
     model.share_memory()
@@ -198,7 +198,7 @@ def train(flags):
         initial_agent_state_buffers.append(state)
 
     actor_processes = []
-    ctx = mp.get_context('fork')
+    ctx = mp.get_context('spawn')
     free_queue = ctx.SimpleQueue()
     full_queue = ctx.SimpleQueue()
 

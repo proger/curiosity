@@ -185,6 +185,9 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
             #print("initial observation shape: ", initial_obs.shape)
             trajectory = torch.cat([initial_obs for _ in range(4)], dim=4)
 
+        device = next(model.parameters()).device
+        env_output = {k: v.to(device) for k, v in env_output.items()}
+
         agent_state = model.initial_state(batch_size=1)
         agent_output, unused_state = model(env_output, agent_state)
 
@@ -237,6 +240,7 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
                 timings.reset()
 
                 with torch.no_grad():
+                    env_output = {k: v.to(device) for k, v in env_output.items()}
                     agent_output, agent_state = model(env_output, agent_state)
 
                 timings.time('model')
