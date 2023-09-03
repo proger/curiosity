@@ -12,6 +12,8 @@ import time
 import timeit
 import pprint
 
+from celluloid import Camera
+import matplotlib.pyplot as plt
 import numpy as np
 import wandb
 
@@ -356,6 +358,56 @@ def train(flags):
     checkpoint(frames)
     plogger.close()
 
+    videopath = os.path.expandvars(
+        os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
+                                         'animation.mp4')))
+    test(model, env, flags, output_filename=videopath)
+    wandb.log({'demo': wandb.Video(videopath)})
+
+
+def test(model, env, flags, videopath='animation.mp4'):
+    flags.num_buffers = 1
+    flags.fix_seed = True
+
+    buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
+
+    initial_agent_state_buffers = []
+    for _ in range(flags.num_buffers):
+        state = model.initial_state(batch_size=1)
+        for t in state:
+            t.share_memory_()
+        initial_agent_state_buffers.append(state)
+
+    ctx = mp.get_context('spawn')
+    free_queue = ctx.SimpleQueue()
+    full_queue = ctx.SimpleQueue()
+
+    for m in range(flags.num_buffers):
+        free_queue.put(m)
+    free_queue.put(None)
+
+    episode_state_count_dict = dict()
+    train_state_count_dict = dict()
+    act(0, free_queue, full_queue, model, buffers,
+        episode_state_count_dict, train_state_count_dict,
+        initial_agent_state_buffers, flags)
+
+    fig = plt.figure()
+    plt.axis('off')
+    camera = Camera(fig)
+    env.seed(flags.env_seed)
+    obs = env.reset()
+    img = env.render('rgb_array', tile_size=32)
+    plt.imshow(img)
+    camera.snap()
+    for action in buffers['action'][0].tolist():
+        obs, reward, done, info = env.step(action)
+        img = env.render('rgb_array', tile_size=32)
+        plt.imshow(img)
+        camera.snap()
+    animation = camera.animate()
+    animation.save(videopath)
+
 
 if __name__ == '__main__':
     import argparse
@@ -389,44 +441,4 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load(flags.checkpoint)['model_state_dict'])
     model.share_memory()
 
-    buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
-
-    initial_agent_state_buffers = []
-    for _ in range(flags.num_buffers):
-        state = model.initial_state(batch_size=1)
-        for t in state:
-            t.share_memory_()
-        initial_agent_state_buffers.append(state)
-
-    ctx = mp.get_context('fork')
-    free_queue = ctx.SimpleQueue()
-    full_queue = ctx.SimpleQueue()
-
-    for m in range(flags.num_buffers):
-        free_queue.put(m)
-    free_queue.put(None)
-
-    episode_state_count_dict = dict()
-    train_state_count_dict = dict()
-    act(0, free_queue, full_queue, model, buffers,
-        episode_state_count_dict, train_state_count_dict,
-        initial_agent_state_buffers, flags)
-
-    print(buffers)
-
-    import matplotlib.pyplot as plt
-    from celluloid import Camera
-    fig = plt.figure()
-    camera = Camera(fig)
-    env.seed(flags.env_seed)
-    obs = env.reset()
-    img = env.render('rgb_array', tile_size=32)
-    plt.imshow(img)
-    camera.snap()
-    for action in buffers['action'][0].tolist():
-        obs, reward, done, info = env.step(action)
-        img = env.render('rgb_array', tile_size=32)
-        plt.imshow(img)
-        camera.snap()
-    animation = camera.animate()
-    animation.save('animation.mp4')
+    test(model, env, flags, videopath='animation.mp4')
