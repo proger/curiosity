@@ -128,6 +128,7 @@ def learn(actor_model,
 
         actor_model.load_state_dict(model.state_dict())
 
+        # When adding keys here, do it again in stat_keys below in this file.
         stats = {
             'mean_episode_return': torch.mean(episode_returns).item(),
             'total_loss': total_loss.item(),
@@ -261,6 +262,9 @@ def train(flags):
         'mean_rewards',
         'mean_intrinsic_rewards',
         'mean_total_rewards',
+        'grad_norm_policy',
+        'grad_norm_rnd_predictor',
+        'lr_policy',
     ]
 
     logger.info('# Step\t%s', '\t'.join(stat_keys))
