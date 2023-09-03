@@ -365,7 +365,7 @@ def train(flags):
     videopath = os.path.expandvars(
         os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
                                          'animation.mp4')))
-    test(model, env, flags, output_filename=videopath)
+    test(model, env, flags, videopath=videopath)
     wandb.log({'demo': wandb.Video(videopath)})
 
 
