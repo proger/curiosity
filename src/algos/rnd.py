@@ -114,6 +114,18 @@ def learn(actor_model,
         total_loss = pg_loss + baseline_loss + entropy_loss + rnd_loss
 
         episode_returns = batch['episode_return'][batch['done']]
+
+        scheduler.step()
+        optimizer.zero_grad()
+        predictor_optimizer.zero_grad()
+        total_loss.backward()
+        grad_norm_policy = nn.utils.clip_grad_norm_(model.parameters(), flags.max_grad_norm)
+        grad_norm_rnd_predictor = nn.utils.clip_grad_norm_(predictor_network.parameters(), flags.max_grad_norm)
+        optimizer.step()
+        predictor_optimizer.step()
+
+        actor_model.load_state_dict(model.state_dict())
+
         stats = {
             'mean_episode_return': torch.mean(episode_returns).item(),
             'total_loss': total_loss.item(),
@@ -124,18 +136,10 @@ def learn(actor_model,
             'mean_rewards': torch.mean(rewards).item(),
             'mean_intrinsic_rewards': torch.mean(intrinsic_rewards).item(),
             'mean_total_rewards': torch.mean(total_rewards).item(),
+            'grad_norm_policy': grad_norm_policy.item(),
+            'grad_norm_rnd_predictor': grad_norm_rnd_predictor.item(),
+            'lr_policy': scheduler.get_lr()[0],
         }
-        
-        scheduler.step()
-        optimizer.zero_grad()
-        predictor_optimizer.zero_grad()
-        total_loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), flags.max_grad_norm)
-        nn.utils.clip_grad_norm_(predictor_network.parameters(), flags.max_grad_norm)
-        optimizer.step()
-        predictor_optimizer.step()
-
-        actor_model.load_state_dict(model.state_dict())
         return stats
 
 
