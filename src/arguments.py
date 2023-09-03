@@ -44,7 +44,7 @@ parser.add_argument('--queue_timeout', default=1, type=int,
                     metavar='S', help='Error timeout for queue.')
 parser.add_argument('--num_buffers', default=80, type=int,
                     metavar='N', help='Number of shared-memory buffers.')
-parser.add_argument('--num_threads', default=4, type=int,
+parser.add_argument('--num_threads', default=1, type=int,
                     metavar='N', help='Number learner threads.')
 parser.add_argument('--disable_cuda', action='store_true',
                     help='Disable CUDA.')
