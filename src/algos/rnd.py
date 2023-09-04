@@ -309,8 +309,6 @@ def train(flags):
     def checkpoint(frames):
         if flags.disable_checkpoint:
             return
-        checkpointpath = os.path.expandvars(os.path.expanduser(
-            '%s/%s/%s' % (flags.savedir, flags.xpid,'model.tar')))
         log.info('Saving checkpoint to %s', checkpointpath)
         torch.save({
             'model_state_dict': model.state_dict(),
@@ -365,6 +363,7 @@ def train(flags):
     videopath = os.path.expandvars(
         os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
                                          'animation.mp4')))
+    model.load_state_dict(torch.load(checkpointpath)['model_state_dict'])
     test(model, env, flags, videopath=videopath)
     wandb.log({'demo': wandb.Video(videopath)})
 
