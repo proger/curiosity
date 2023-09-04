@@ -32,8 +32,6 @@ parser.add_argument('--disable_checkpoint', action='store_true',
                     help='Disable saving checkpoint.')
 parser.add_argument('--savedir', default='exp/',
                     help='Root dir where experiment data will be saved.')
-parser.add_argument('--num_actors', default=32, type=int, metavar='N',
-                    help='Number of actors.')
 parser.add_argument('--total_frames', default=100000000, type=int, metavar='T',
                     help='Total environment frames to train for.')
 parser.add_argument('--batch_size', default=32, type=int, metavar='B',
@@ -44,6 +42,8 @@ parser.add_argument('--queue_timeout', default=1, type=int,
                     metavar='S', help='Error timeout for queue.')
 parser.add_argument('--num_buffers', default=80, type=int,
                     metavar='N', help='Number of shared-memory buffers.')
+parser.add_argument('--num_actors', default=31, type=int, metavar='N',
+                    help='Number of actors.')
 parser.add_argument('--num_threads', default=1, type=int,
                     metavar='N', help='Number learner threads.')
 parser.add_argument('--disable_cuda', action='store_true',
