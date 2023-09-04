@@ -117,7 +117,7 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
     T = flags.unroll_length
     # TODO: add a key 'trajectory'
     specs = dict(
-        frame=dict(size=(T + 1, *obs_shape), dtype=torch.bool),
+        frame=dict(size=(T + 1, *obs_shape), dtype=torch.uint8),
         reward=dict(size=(T + 1,), dtype=torch.float32),
         done=dict(size=(T + 1,), dtype=torch.bool),
         episode_return=dict(size=(T + 1,), dtype=torch.float32),
@@ -129,14 +129,14 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
         episode_win=dict(size=(T + 1,), dtype=torch.int32),
         carried_obj=dict(size=(T + 1,), dtype=torch.int32),
         carried_col=dict(size=(T + 1,), dtype=torch.int32),
-        partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.bool),
+        partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.uint8),
         episode_state_count=dict(size=(T + 1,), dtype=torch.float32),
         train_state_count=dict(size=(T + 1,), dtype=torch.float32),
     )
     if flags.trajectory_embed:
         specs = dict(
-            partial_trajectory=dict(size=(T + 1, 7, 7, 3*4), dtype=torch.bool),
-            frame=dict(size=(T + 1, *obs_shape), dtype=torch.bool),
+            partial_trajectory=dict(size=(T + 1, 7, 7, 3*4), dtype=torch.uint8),
+            frame=dict(size=(T + 1, *obs_shape), dtype=torch.uint8),
             reward=dict(size=(T + 1,), dtype=torch.float32),
             done=dict(size=(T + 1,), dtype=torch.bool),
             episode_return=dict(size=(T + 1,), dtype=torch.float32),
@@ -148,7 +148,7 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
             episode_win=dict(size=(T + 1,), dtype=torch.int32),
             carried_obj=dict(size=(T + 1,), dtype=torch.int32),
             carried_col=dict(size=(T + 1,), dtype=torch.int32),
-            partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.bool),
+            partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.uint8),
             episode_state_count=dict(size=(T + 1,), dtype=torch.float32),
             train_state_count=dict(size=(T + 1,), dtype=torch.float32),
         )
