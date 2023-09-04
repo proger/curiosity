@@ -397,6 +397,7 @@ def test(model, env, flags, videopath='animation.mp4'):
         initial_agent_state_buffers, flags)
 
     fig = plt.figure()
+    ax = plt.gca()
     plt.axis('off')
     camera = Camera(fig)
     env.seed(flags.env_seed)
@@ -404,10 +405,14 @@ def test(model, env, flags, videopath='animation.mp4'):
     img = env.render('rgb_array', tile_size=32)
     plt.imshow(img)
     camera.snap()
+    all_done = False
     for action in buffers['action'][0].tolist():
         obs, reward, done, info = env.step(action)
+        all_done = all_done or done
         img = env.render('rgb_array', tile_size=32)
         plt.imshow(img)
+        if all_done:
+            ax.text(0.5, 1.01, 'beam me up pls', transform=ax.transAxes)
         camera.snap()
     animation = camera.animate()
     animation.save(videopath)
