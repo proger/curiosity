@@ -33,7 +33,6 @@ from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
 
 MinigridPolicyNet = models.MinigridPolicyNet
-MinigridStateEmbeddingNet = models.MinigridStateEmbeddingNet
 
 MarioDoomPolicyNet = models.MarioDoomPolicyNet
 MarioDoomStateEmbeddingNet = models.MarioDoomStateEmbeddingNet
@@ -183,12 +182,14 @@ def train(flags):
         else:
             model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(device=flags.device)
         if flags.use_fullobs_intrinsic:
+            raise NotImplementedError('use_fullobs_intrinsic is not implemented yet')
             random_target_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
             predictor_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
         else:
-            random_target_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
-            predictor_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+            random_target_network = models.MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+            predictor_network = models.MinigridStateSequenceNet(env.observation_space.shape).to(device=flags.device)
     else:
+        raise NotImplementedError('Only MiniGrid environments are supported at the moment.')
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
         random_target_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
         predictor_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
@@ -228,6 +229,7 @@ def train(flags):
             learner_model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
                 .to(device=flags.device)
     else:
+        raise NotImplementedError('Only MiniGrid environments are supported at the moment.')
         learner_model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)\
             .to(device=flags.device)
 

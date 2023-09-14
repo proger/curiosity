@@ -99,7 +99,7 @@ parser.add_argument('--no_reward', action='store_true',
 
 # Training Models.
 parser.add_argument('--model', default='vanilla',
-                    choices=['vanilla', 'count', 'curiosity', 'rnd', 'ride', 'no-episodic-counts', 'only-episodic-counts'],
+                    choices=['vanilla', 'count', 'curiosity', 'recurrent-rnd', 'rnd', 'ride', 'no-episodic-counts', 'only-episodic-counts'],
                     help='Model used for training the agent.')
 
 # Baselines for AMIGo paper.

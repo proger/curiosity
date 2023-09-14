@@ -350,23 +350,27 @@ class MinigridPolicyNet(nn.Module):
                     action=action), core_state
 
 
+def make_feat_extract(in_channels, out_channels):
+    init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                        constant_(x, 0), nn.init.calculate_gain('relu'))
+
+    return nn.Sequential(
+            init_(nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+    )
+
+
 class MinigridStateEmbeddingNet(nn.Module):
     def __init__(self, observation_shape):
         super(MinigridStateEmbeddingNet, self).__init__()
         self.observation_shape = observation_shape
 
-        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
-                            constant_(x, 0), nn.init.calculate_gain('relu'))
+        self.feat_extract = make_feat_extract(self.observation_shape[2], 128)
 
-        self.feat_extract = nn.Sequential(
-            init_(nn.Conv2d(in_channels=self.observation_shape[2], out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
-            nn.ELU(),
-            init_(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
-            nn.ELU(),
-            init_(nn.Conv2d(in_channels=32, out_channels=128, kernel_size=(3, 3), stride=2, padding=1)),
-            nn.ELU(),
-        )
-        
     def forward(self, inputs):
 
         # -- [unroll_length x batch_size x height x width x channels]
@@ -376,8 +380,8 @@ class MinigridStateEmbeddingNet(nn.Module):
         # -- [unroll_length*batch_size x height x width x channels]
         x = torch.flatten(x, 0, 1)  # Merge time and batch.
 
-        x = x.float() / 255.0 
-        
+        x = x.float() / 255.0
+
         # -- [unroll_length*batch_size x channels x width x height]
         x = x.transpose(1, 3)
         x = self.feat_extract(x)
@@ -385,6 +389,30 @@ class MinigridStateEmbeddingNet(nn.Module):
         state_embedding = x.view(T, B, -1)
 
         return state_embedding
+
+
+class MinigridStateSequenceNet(nn.Module):
+    def __init__(self, observation_shape):
+        super().__init__()
+
+        self.embed = MinigridStateEmbeddingNet(observation_shape)
+        self.core = nn.LSTM(128, 128, 3)
+
+    def initial_state(self, batch_size):
+        device = next(self.parameters()).device
+        return tuple(torch.zeros(self.core.num_layers, batch_size,
+                                 self.core.hidden_size, device=device) for _ in range(2))
+
+    def forward(self, inputs, core_state=None):
+        if core_state is None:
+            core_state = self.initial_state(inputs.shape[1])
+
+        state_embeddings = self.embed(inputs)
+        # -- [unroll_length x batch_size x 128]
+
+        core_output, core_state = self.core(state_embeddings, core_state)
+        # -- [unroll_length x batch_size x 128]
+        return core_output
 
 
 class MinigridTrajectoryEmbeddingNet(nn.Module):
