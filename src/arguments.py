@@ -87,6 +87,9 @@ parser.add_argument('--intrinsic_reward_coef', default=0.5, type=float,
                     Should be larger than 0.')
 parser.add_argument('--rnd_loss_coef', default=0.1, type=float,
                     help='Coefficient for the RND loss coefficient relative to the IMPALA one.')
+parser.add_argument('--rnd_history', default=16, type=int,
+                    help='Number of history frames to use for computing the Recurrent RND prediction. 0 means use all available history, no padding.')
+
 
 # Singleton Environments.
 parser.add_argument('--fix_seed', action='store_true',

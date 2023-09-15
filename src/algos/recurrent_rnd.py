@@ -185,7 +185,7 @@ def train(flags):
             predictor_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
         else:
             random_target_network = models.MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
-            predictor_network = models.MinigridStateSequenceNet(env.observation_space.shape).to(device=flags.device)
+            predictor_network = models.MinigridStateSequenceNet(env.observation_space.shape, history=flags.rnd_history).to(device=flags.device)
     else:
         raise NotImplementedError('Only MiniGrid environments are supported at the moment.')
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
