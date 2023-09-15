@@ -355,12 +355,12 @@ def make_feat_extract(in_channels, out_channels):
                         constant_(x, 0), nn.init.calculate_gain('relu'))
 
     return nn.Sequential(
-            init_(nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
-            nn.ELU(),
-            init_(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
-            nn.ELU(),
-            init_(nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=(3, 3), stride=2, padding=1)),
-            nn.ELU(),
+        init_(nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+        nn.ELU(),
+        init_(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+        nn.ELU(),
+        init_(nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=(3, 3), stride=2, padding=1)),
+        nn.ELU(),
     )
 
 

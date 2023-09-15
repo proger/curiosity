@@ -32,8 +32,6 @@ import src.losses as losses
 from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act
 
-MinigridPolicyNet = models.MinigridPolicyNet
-
 MarioDoomPolicyNet = models.MarioDoomPolicyNet
 MarioDoomStateEmbeddingNet = models.MarioDoomStateEmbeddingNet
 
@@ -41,7 +39,7 @@ FullObsMinigridPolicyNet = models.FullObsMinigridPolicyNet
 FullObsMinigridStateEmbeddingNet = models.FullObsMinigridStateEmbeddingNet
 
 def learn(actor_model,
-          model,
+          model: models.MinigridPolicyNet,
           random_target_network,
           predictor_network,
           batch,
@@ -180,7 +178,7 @@ def train(flags):
         if flags.use_fullobs_policy:
             model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(device=flags.device)
         else:
-            model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(device=flags.device)
+            model = models.MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(device=flags.device)
         if flags.use_fullobs_intrinsic:
             raise NotImplementedError('use_fullobs_intrinsic is not implemented yet')
             random_target_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
@@ -226,7 +224,7 @@ def train(flags):
             learner_model = FullObsMinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
                 .to(device=flags.device)
         else:
-            learner_model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
+            learner_model = models.MinigridPolicyNet(env.observation_space.shape, env.action_space.n)\
                 .to(device=flags.device)
     else:
         raise NotImplementedError('Only MiniGrid environments are supported at the moment.')
@@ -447,7 +445,7 @@ if __name__ == '__main__':
 
     env = create_env(flags)
 
-    model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(flags.device)
+    model = models.MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(flags.device)
     model.load_state_dict(torch.load(flags.checkpoint)['model_state_dict'])
     model.share_memory()
 
