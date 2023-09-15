@@ -32,7 +32,7 @@ parser.add_argument('--disable_checkpoint', action='store_true',
                     help='Disable saving checkpoint.')
 parser.add_argument('--savedir', default='exp/',
                     help='Root dir where experiment data will be saved.')
-parser.add_argument('--total_frames', default=100000000, type=int, metavar='T',
+parser.add_argument('--total_frames', default=30000000, type=int, metavar='T',
                     help='Total environment frames to train for.')
 parser.add_argument('--batch_size', default=32, type=int, metavar='B',
                     help='Learner batch size.')
@@ -53,7 +53,7 @@ parser.add_argument('--max_grad_norm', default=40., type=float,
                     metavar='MGN', help='Max norm of gradients.')
 
 # Loss settings.
-parser.add_argument('--entropy_cost', default=0.001, type=float,
+parser.add_argument('--entropy_cost', default=0.0001, type=float,
                     help='Entropy cost/multiplier.')
 parser.add_argument('--baseline_cost', default=0.5, type=float,
                     help='Baseline cost/multiplier.')
@@ -81,7 +81,7 @@ parser.add_argument('--inverse_loss_coef', default=0.1, type=float,
                     help='Coefficient for the forward dynamics loss. \
                     This weighs the inverse model loss agains the forward model loss. \
                     Should be between 0 and 1.')
-parser.add_argument('--intrinsic_reward_coef', default=0.5, type=float,
+parser.add_argument('--intrinsic_reward_coef', default=0.01, type=float,
                     help='Coefficient for the intrinsic reward. \
                     This weighs the intrinsic reaward against the extrinsic one. \
                     Should be larger than 0.')
