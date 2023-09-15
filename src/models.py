@@ -392,7 +392,11 @@ class MinigridStateEmbeddingNet(nn.Module):
 
 
 class MinigridStateSequenceNet(nn.Module):
-    def __init__(self, observation_shape, history=16):
+    def __init__(
+        self,
+        observation_shape,
+        history=16 # how many frames to use as context. if <= 0, use all frames
+    ):
         super().__init__()
 
         self.embed = MinigridStateEmbeddingNet(observation_shape)
@@ -408,25 +412,32 @@ class MinigridStateSequenceNet(nn.Module):
         state_embeddings = self.embed(inputs)
         # -- [unroll_length x batch_size x 128]
 
-        # pad unroll_length on the left with self.history-1 zeros
-        T, B, C = state_embeddings.shape
-        state_embeddings = F.pad(state_embeddings, (0, 0, 0, 0, self.history-1, 0))
+        if self.history > 0:
+            # pad unroll_length on the left with self.history-1 zeros
+            T, B, C = state_embeddings.shape
+            state_embeddings = F.pad(state_embeddings, (0, 0, 0, 0, self.history-1, 0))
 
-        state_windows = state_embeddings.unfold(0, self.history, 1)
-        # -- [unroll_length x batch_size x 128 x history]
+            state_windows = state_embeddings.unfold(0, self.history, 1)
+            # -- [unroll_length x batch_size x 128 x history]
 
-        contexts = state_windows.permute(3, 0, 1, 2).contiguous().view(self.history, T*B, C)
-        # -- [history x unroll_length x batch_size x 128]
-        # -- [history x unroll_length*batch_size x 128]
+            contexts = state_windows.permute(3, 0, 1, 2).contiguous().view(self.history, T*B, C)
+            # -- [history x unroll_length x batch_size x 128]
+            # -- [history x unroll_length*batch_size x 128]
 
-        if core_state is None:
-            core_state = self.initial_state(contexts.shape[1])
+            if core_state is None:
+                core_state = self.initial_state(contexts.shape[1])
 
-        contexts, core_state = self.core(contexts, core_state)
-        # -- [history x unroll_length*batch_size x 128]
+            contexts, core_state = self.core(contexts, core_state)
+            # -- [history x unroll_length*batch_size x 128]
 
-        contextualized_states = contexts.view(self.history, T, B, C)[-1, ...]
-        # -- [unroll_length x batch_size x 128]
+            contextualized_states = contexts.view(self.history, T, B, C)[-1, ...]
+            # -- [unroll_length x batch_size x 128]
+        else:
+            if core_state is None:
+                core_state = self.initial_state(state_embeddings.shape[1])
+
+            contextualized_states, core_state = self.core(state_embeddings, core_state)
+            # -- [unroll_length x batch_size x 128]
 
         return contextualized_states
 
