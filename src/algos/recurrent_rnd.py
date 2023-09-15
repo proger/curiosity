@@ -364,13 +364,16 @@ def train(flags):
         os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
                                          'animation.mp4')))
     model.load_state_dict(torch.load(checkpointpath)['model_state_dict'])
-    test(model, env, flags, videopath=videopath)
+    test(model, env=None, flags=flags, videopath=videopath)
     wandb.log({'demo': wandb.Video(videopath)})
 
 
-def test(model, env, flags, videopath='animation.mp4'):
+def test(model, *, env, flags, videopath='animation.mp4'):
     flags.num_buffers = 1
     flags.fix_seed = True
+
+    if env is None:
+        env = create_env(flags)
 
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
 
@@ -449,4 +452,4 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load(flags.checkpoint)['model_state_dict'])
     model.share_memory()
 
-    test(model, env, flags, videopath='animation.mp4')
+    test(model, env=env, flags=flags, videopath='animation.mp4')
