@@ -12,11 +12,11 @@ python -m venv .venv
 .venv/bin/pip install -e ./gym-minigrid
 ```
 
-Train [RND](https://openai.com/research/reinforcement-learning-with-prediction-based-rewards) agent.
+Train [RND](https://openai.com/research/reinforcement-learning-with-prediction-based-rewards) agent.  Reduce `num_actors` until everything starts to fit in VRAM.
 
 ```bash
 ulimit -n 64000 # prevents RuntimeError: unable to open shared memory object </torch_13695_1684771047_984> in read-write mode: Too many open files (24)
-env OMP_NUM_THREADS=1 .venv/bin/python main.py --model rnd --env MiniGrid-MultiRoom-N7-S4-v0 --total_frames 30000000 --intrinsic_reward_coef 0.1 --entropy_cost 0.0001
+env OMP_NUM_THREADS=1 .venv/bin/python -m src.algos.recurrent_rnd --intrinsic_reward_coef 0.1 --rnd_history 16 --rnd_autoregressive --num_actors 30
 ```
 
 Try the environment with manual control. Use `ssh -X` with XQuartz running on a Mac if needed.

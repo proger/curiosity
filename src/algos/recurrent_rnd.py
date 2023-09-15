@@ -59,7 +59,18 @@ def learn(actor_model,
                     .reshape(flags.unroll_length, flags.batch_size, 128)
         else:
             random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-            predicted_embedding = predictor_network(batch['partial_obs'][1:].to(device=flags.device))
+            if flags.rnd_autoregressive:
+                # shift random embedding by 1 step to the right
+                shifted_targets = F.pad(random_embedding, (0, 0, 0, 0, 1, 0))[:-1]
+
+                predicted_embedding = predictor_network(
+                    inputs=batch['partial_obs'][1:].to(device=flags.device),
+                    shifted_targets=shifted_targets,
+                )
+            else:
+                predicted_embedding = predictor_network(
+                    inputs=batch['partial_obs'][1:].to(device=flags.device)
+                )
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
 
@@ -185,7 +196,11 @@ def train(flags):
             predictor_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
         else:
             random_target_network = models.MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
-            predictor_network = models.MinigridStateSequenceNet(env.observation_space.shape, history=flags.rnd_history).to(device=flags.device)
+            predictor_network = models.MinigridStateSequenceNet(
+                env.observation_space.shape,
+                history=flags.rnd_history,
+                autoregressive=flags.rnd_autoregressive,
+            ).to(device=flags.device)
     else:
         raise NotImplementedError('Only MiniGrid environments are supported at the moment.')
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)

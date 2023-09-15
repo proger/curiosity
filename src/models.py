@@ -395,12 +395,13 @@ class MinigridStateSequenceNet(nn.Module):
     def __init__(
         self,
         observation_shape,
-        history=16 # how many frames to use as context. if <= 0, use all frames
+        history=16, # how many frames to use as context. if <= 0, use all frames
+        autoregressive=False,
     ):
         super().__init__()
 
         self.embed = MinigridStateEmbeddingNet(observation_shape)
-        self.core = nn.LSTM(128, 128, 1)
+        self.core = nn.LSTM(128*(2 if autoregressive else 1), 128, 1)
         self.history = history
 
     def initial_state(self, batch_size):
@@ -408,21 +409,40 @@ class MinigridStateSequenceNet(nn.Module):
         return tuple(torch.zeros(self.core.num_layers, batch_size,
                                  self.core.hidden_size, device=device) for _ in range(2))
 
-    def forward(self, inputs, core_state=None):
+    def pad_unfold(
+        self,
+        x # [unroll_length x batch_size x 128]
+    ): # -> [history x unroll_length*batch_size x 128]
+
+        # pad unroll_length on the left with self.history-1 zeros
+        T, B, C = x.shape
+        x = F.pad(x, (0, 0, 0, 0, self.history-1, 0))
+
+        x_windows = x.unfold(0, self.history, 1)
+        # -- [unroll_length x batch_size x 128 x history]
+
+        x_contexts = x_windows.permute(3, 0, 1, 2).contiguous().view(self.history, T*B, C)
+        # -- [history x unroll_length x batch_size x 128]
+        # -- [history x unroll_length*batch_size x 128]
+
+        return x_contexts
+
+    def forward(self, inputs, shifted_targets=None, core_state=None):
         state_embeddings = self.embed(inputs)
         # -- [unroll_length x batch_size x 128]
 
         if self.history > 0:
             # pad unroll_length on the left with self.history-1 zeros
             T, B, C = state_embeddings.shape
-            state_embeddings = F.pad(state_embeddings, (0, 0, 0, 0, self.history-1, 0))
 
-            state_windows = state_embeddings.unfold(0, self.history, 1)
-            # -- [unroll_length x batch_size x 128 x history]
+            contexts = self.pad_unfold(state_embeddings)
 
-            contexts = state_windows.permute(3, 0, 1, 2).contiguous().view(self.history, T*B, C)
-            # -- [history x unroll_length x batch_size x 128]
-            # -- [history x unroll_length*batch_size x 128]
+            if shifted_targets is not None:
+                target_contexts = self.pad_unfold(shifted_targets)
+                # -- [history x unroll_length*batch_size x 128]
+
+                contexts = torch.cat([contexts, target_contexts], dim=-1)
+                # -- [history x unroll_length*batch_size x 256]
 
             if core_state is None:
                 core_state = self.initial_state(contexts.shape[1])
@@ -433,6 +453,10 @@ class MinigridStateSequenceNet(nn.Module):
             contextualized_states = contexts.view(self.history, T, B, C)[-1, ...]
             # -- [unroll_length x batch_size x 128]
         else:
+            if shifted_targets is not None:
+                state_embeddings = torch.cat([state_embeddings, shifted_targets], dim=-1)
+                # -- [unroll_length x batch_size x 256]
+
             if core_state is None:
                 core_state = self.initial_state(state_embeddings.shape[1])
 
