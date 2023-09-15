@@ -9,9 +9,9 @@ import argparse
 parser = argparse.ArgumentParser(description='PyTorch Scalable Agent')
 
 # General Settings.
-parser.add_argument('--env', type=str, default='MiniGrid-ObstructedMaze-2Dlh-v0',
-                    help='Gym environment. Other options are: SuperMarioBros-1-1-v0 \
-                    or VizdoomMyWayHomeDense-v0 etc.')
+parser.add_argument('--env', type=str, default='MiniGrid-MultiRoom-N7-S4-v0',
+                    help='Gym environment. Other options are: MiniGrid-ObstructedMaze-2Dlh-v0, \
+                    SuperMarioBros-1-1-v0, VizdoomMyWayHomeDense-v0 etc.')
 parser.add_argument('--xpid', default=None,
                     help='Experiment id (default: None).')
 parser.add_argument('--num_input_frames', default=1, type=int,
@@ -48,6 +48,7 @@ parser.add_argument('--num_threads', default=1, type=int,
                     metavar='N', help='Number learner threads.')
 parser.add_argument('--disable_cuda', action='store_true',
                     help='Disable CUDA.')
+parser.add_argument('--device', type=str, default='cuda')
 parser.add_argument('--max_grad_norm', default=40., type=float,
                     metavar='MGN', help='Max norm of gradients.')
 
@@ -96,6 +97,7 @@ parser.add_argument('--env_seed', default=1, type=int,
                     singleton (i.e. not procedurally generated) environment.')
 parser.add_argument('--no_reward', action='store_true',
                     help='No extrinsic reward. The agent uses only intrinsic reward to learn.')
+parser.add_argument('--test', type=str, help='Test the model using this checkpoint.')
 
 # Training Models.
 parser.add_argument('--model', default='vanilla',

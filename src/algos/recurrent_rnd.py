@@ -421,35 +421,18 @@ def test(model, *, env, flags, videopath='animation.mp4'):
 
 
 if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser('Curiosity-driven Exploration')
-    parser.add_argument('--env', default='MiniGrid-MultiRoom-N7-S4-v0')
-    parser.add_argument('--device', default='cuda')
-    parser.add_argument('--unroll_length', default=100, type=int, metavar='T',
-                    help='The unroll length (time dimension).')
-    parser.add_argument('--trajectory_embed', action='store_true',
-                    help='Use trajectory embedding rather than state embedding')
-    parser.add_argument('--num_buffers', default=1, type=int,
-                    metavar='N', help='Number of shared-memory buffers.')
-    parser.add_argument('--num_actors', default=32, type=int, metavar='N',
-                    help='Number of actors.')
-    parser.add_argument('--num_input_frames', default=1, type=int,
-                    help='Number of input frames to the model and state embedding including the current frame \
-                    When num_input_frames > 1, it will also take the previous num_input_frames - 1 frames as input.')
-    parser.add_argument('--fix_seed', action='store_true',
-                        help='Fix the environment seed so that it is \
-                        no longer procedurally generated but rather the same layout every episode.')
-    parser.add_argument('--env_seed', default=1, type=int,
-                        help='The seed used to generate the environment if we are using a \
-                        singleton (i.e. not procedurally generated) environment.')
-    parser.add_argument('--model', default='rnd', help='Model used for training the agent.')
-    parser.add_argument('checkpoint')
+    from src.arguments import parser
     flags = parser.parse_args()
+    flags.model = 'recurrent-rnd'
 
-    env = create_env(flags)
+    if flags.test:
+        checkpoint = flags.test
+        env = create_env(flags)
 
-    model = models.MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(flags.device)
-    model.load_state_dict(torch.load(flags.checkpoint)['model_state_dict'])
-    model.share_memory()
+        model = models.MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(flags.device)
+        model.load_state_dict(torch.load(checkpoint)['model_state_dict'])
+        model.share_memory()
 
-    test(model, env=env, flags=flags, videopath='animation.mp4')
+        test(model, env=env, flags=flags, videopath='animation.mp4')
+    else:
+        train(flags)
