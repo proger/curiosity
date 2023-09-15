@@ -402,6 +402,7 @@ class MinigridStateSequenceNet(nn.Module):
 
         self.embed = MinigridStateEmbeddingNet(observation_shape)
         self.core = nn.LSTM(128*(2 if autoregressive else 1), 128, 1)
+        self.readout = nn.Linear(128, 128, bias=True)
         self.history = history
 
     def initial_state(self, batch_size):
@@ -463,6 +464,7 @@ class MinigridStateSequenceNet(nn.Module):
             contextualized_states, core_state = self.core(state_embeddings, core_state)
             # -- [unroll_length x batch_size x 128]
 
+        contextualized_states = self.readout(contextualized_states)
         return contextualized_states
 
 
