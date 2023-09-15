@@ -248,7 +248,7 @@ def train(flags):
 
     optimizer = torch.optim.RMSprop(
         learner_model.parameters(),
-        lr=flags.learning_rate,
+        lr=flags.policy_learning_rate,
         momentum=flags.momentum,
         eps=flags.epsilon,
         alpha=flags.alpha)
