@@ -396,19 +396,33 @@ class MinigridStateSequenceNet(nn.Module):
         self,
         observation_shape,
         history=16, # how many frames to use as context. if <= 0, use all frames
-        autoregressive=False,
+        autoregressive=None,
     ):
         super().__init__()
+        self.autoregressive = autoregressive
+        self.history = history
 
         self.embed = MinigridStateEmbeddingNet(observation_shape)
-        self.core = nn.LSTM(128*(2 if autoregressive else 1), 128, 1)
+        if self.autoregressive is None:
+            self.core = nn.LSTM(128, 128, 1)
+        elif self.autoregressive == 'forward-target':
+            self.core = nn.LSTM(128*2, 128, 1)
+        elif self.autoregressive == 'forward-target-difference':
+            self.core = nn.LSTMCell(128*2, 128)
+        else:
+            raise ValueError(f'Unknown autoregressive mode: {self.autoregressive}')
         self.readout = nn.Linear(128, 128, bias=True)
-        self.history = history
 
     def initial_state(self, batch_size):
         device = next(self.parameters()).device
-        return tuple(torch.zeros(self.core.num_layers, batch_size,
-                                 self.core.hidden_size, device=device) for _ in range(2))
+        if self.autoregressive == 'forward-target-difference':
+            # LSTMCell
+            return tuple(torch.zeros(batch_size, self.core.hidden_size, device=device)
+                         for _ in range(2))
+        else:
+            # LSTM
+            return tuple(torch.zeros(self.core.num_layers, batch_size,
+                                    self.core.hidden_size, device=device) for _ in range(2))
 
     def pad_unfold(
         self,
@@ -427,6 +441,36 @@ class MinigridStateSequenceNet(nn.Module):
         # -- [history x unroll_length*batch_size x 128]
 
         return x_contexts
+
+    def run_sequence(
+        self,
+        contexts, # [history x unroll_length*batch_size x (128 state + 128 targets)]
+        core_state # tuple
+    ):
+        if self.autoregressive == 'forward-target-difference':
+            assert contexts.shape[0] == self.history
+
+            # run contexts through the LSTM, but set the next input to be the difference
+            # between the current input and the previous output
+
+            outputs = []
+
+            input = contexts[0, ...]
+            hidden, cell = self.core(input, core_state)
+            outputs = [hidden]
+            core_state = (hidden, cell)
+            for i in range(1, self.history):
+                # pad output with 128 zeros where state should be
+                ar_output = F.pad(hidden, (128, 0))
+                input = contexts[i, ...] - ar_output
+                hidden, cell = self.core(input, core_state)
+                outputs.append(hidden)
+                core_state = (hidden, cell)
+
+            return torch.stack(outputs), core_state
+        else:
+            return self.core(contexts, core_state)
+
 
     def forward(self, inputs, shifted_targets=None, core_state=None):
         state_embeddings = self.embed(inputs)
@@ -448,7 +492,7 @@ class MinigridStateSequenceNet(nn.Module):
             if core_state is None:
                 core_state = self.initial_state(contexts.shape[1])
 
-            contexts, core_state = self.core(contexts, core_state)
+            contexts, core_state = self.run_sequence(contexts, core_state)
             # -- [history x unroll_length*batch_size x 128]
 
             contextualized_states = contexts.view(self.history, T, B, C)[-1, ...]
@@ -461,7 +505,7 @@ class MinigridStateSequenceNet(nn.Module):
             if core_state is None:
                 core_state = self.initial_state(state_embeddings.shape[1])
 
-            contextualized_states, core_state = self.core(state_embeddings, core_state)
+            contextualized_states, core_state = self.run_sequence(state_embeddings, core_state)
             # -- [unroll_length x batch_size x 128]
 
         contextualized_states = self.readout(contextualized_states)

@@ -59,7 +59,7 @@ def learn(actor_model,
                     .reshape(flags.unroll_length, flags.batch_size, 128)
         else:
             random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-            if flags.rnd_autoregressive:
+            if flags.rnd_autoregressive is not None:
                 # shift random embedding by 1 step to the right
                 shifted_targets = F.pad(random_embedding, (0, 0, 0, 0, 1, 0))[:-1]
 

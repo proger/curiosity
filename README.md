@@ -16,7 +16,7 @@ Train [RND](https://openai.com/research/reinforcement-learning-with-prediction-b
 
 ```bash
 ulimit -n 64000 # prevents RuntimeError: unable to open shared memory object </torch_13695_1684771047_984> in read-write mode: Too many open files (24)
-env OMP_NUM_THREADS=1 .venv/bin/python -m src.algos.recurrent_rnd --intrinsic_reward_coef 0.1 --rnd_history 16 --rnd_autoregressive --num_actors 30
+env OMP_NUM_THREADS=1 .venv/bin/python -m src.algos.recurrent_rnd --intrinsic_reward_coef 0.1 --rnd_history 16 --rnd_autoregressive forward-target-difference --num_actors 30
 ```
 
 Try the environment with manual control. Use `ssh -X` with XQuartz running on a Mac if needed.
