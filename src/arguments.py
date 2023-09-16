@@ -6,7 +6,10 @@
 
 import argparse
 
-parser = argparse.ArgumentParser(description='PyTorch Scalable Agent')
+parser = argparse.ArgumentParser(
+    description='PyTorch Scalable Agent',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter
+)
 
 # General Settings.
 parser.add_argument('--env', type=str, default='MiniGrid-MultiRoom-N7-S4-v0',
