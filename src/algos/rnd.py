@@ -63,11 +63,9 @@ def learn(actor_model,
         else:
             random_embedding = random_target_network(
                 batch['partial_obs'][1:].to(device=flags.device),
-                final_activation=False,
             )
             predicted_embedding = predictor_network(
                 batch['partial_obs'][1:].to(device=flags.device),
-                final_activation=False,
             )
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
@@ -192,8 +190,14 @@ def train(flags):
             random_target_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
             predictor_network = FullObsMinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
         else:
-            random_target_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
-            predictor_network = MinigridStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
+            random_target_network = MinigridStateEmbeddingNet(
+                env.observation_space.shape,
+                final_activation=False
+            ).to(device=flags.device)
+            predictor_network = MinigridStateEmbeddingNet(
+                env.observation_space.shape,
+                final_activation=False
+            ).to(device=flags.device)
     else:
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
         random_target_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
