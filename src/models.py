@@ -350,26 +350,34 @@ class MinigridPolicyNet(nn.Module):
                     action=action), core_state
 
 
-def make_feat_extract(in_channels, out_channels):
+def make_feat_extract(in_channels, out_channels, final_activation=True):
     init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
                         constant_(x, 0), nn.init.calculate_gain('relu'))
 
-    return nn.Sequential(
-        init_(nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
-        nn.ELU(),
-        init_(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
-        nn.ELU(),
-        init_(nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=(3, 3), stride=2, padding=1)),
-        nn.ELU(),
-    )
-
+    if final_activation:
+        return nn.Sequential(
+            init_(nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+        )
+    else:
+        return nn.Sequential(
+            init_(nn.Conv2d(in_channels=in_channels, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=(3, 3), stride=2, padding=1)),
+        )
 
 class MinigridStateEmbeddingNet(nn.Module):
-    def __init__(self, observation_shape):
+    def __init__(self, observation_shape, final_activation=True):
         super(MinigridStateEmbeddingNet, self).__init__()
         self.observation_shape = observation_shape
 
-        self.feat_extract = make_feat_extract(self.observation_shape[2], 128)
+        self.feat_extract = make_feat_extract(self.observation_shape[2], 128, final_activation=final_activation)
 
     def forward(self, inputs):
 
@@ -402,7 +410,7 @@ class MinigridStateSequenceNet(nn.Module):
         self.autoregressive = autoregressive
         self.history = history
 
-        self.embed = MinigridStateEmbeddingNet(observation_shape)
+        self.embed = MinigridStateEmbeddingNet(observation_shape, final_activation=True)
         if self.autoregressive is None:
             self.core = nn.LSTM(128, 128, 1)
         elif self.autoregressive == 'forward-target':
