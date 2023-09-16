@@ -380,7 +380,7 @@ class MinigridStateEmbeddingNet(nn.Module):
         # -- [unroll_length*batch_size x height x width x channels]
         x = torch.flatten(x, 0, 1)  # Merge time and batch.
 
-        x = x.float() / 255.0
+        x = x.float() #/ 255.0
 
         # -- [unroll_length*batch_size x channels x width x height]
         x = x.transpose(1, 3)
