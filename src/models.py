@@ -405,21 +405,25 @@ class MinigridStateSequenceNet(nn.Module):
         observation_shape,
         history=16, # how many frames to use as context. if <= 0, use all frames
         autoregressive=None,
+        hidden_size=128,
     ):
         super().__init__()
         self.autoregressive = autoregressive
         self.history = history
 
         self.embed = MinigridStateEmbeddingNet(observation_shape, final_activation=True)
+        self.hidden_size = hidden_size
+
+        self.readin = nn.Linear(128, self.hidden_size, bias=True)
         if self.autoregressive is None:
-            self.core = nn.LSTM(128, 128, 1)
+            self.core = nn.LSTM(self.hidden_size, self.hidden_size, 1)
         elif self.autoregressive == 'forward-target':
-            self.core = nn.LSTM(128*2, 128, 1)
+            self.core = nn.LSTM(self.hidden_size*2, self.hidden_size, 1)
         elif self.autoregressive == 'forward-target-difference':
-            self.core = nn.LSTMCell(128*2, 128)
+            self.core = nn.LSTMCell(self.hidden_size*2, self.hidden_size)
         else:
             raise ValueError(f'Unknown autoregressive mode: {self.autoregressive}')
-        self.readout = nn.Linear(128, 128, bias=True)
+        self.readout = nn.Linear(self.hidden_size, 128, bias=True)
 
     def initial_state(self, batch_size):
         device = next(self.parameters()).device
@@ -482,7 +486,8 @@ class MinigridStateSequenceNet(nn.Module):
 
     def forward(self, inputs, shifted_targets=None, core_state=None):
         state_embeddings = self.embed(inputs)
-        # -- [unroll_length x batch_size x 128]
+        state_embeddings = self.readin(state_embeddings)
+        # -- [unroll_length x batch_size x hidden_size]
 
         if self.history > 0:
             # pad unroll_length on the left with self.history-1 zeros
@@ -492,31 +497,32 @@ class MinigridStateSequenceNet(nn.Module):
 
             if shifted_targets is not None:
                 target_contexts = self.pad_unfold(shifted_targets)
-                # -- [history x unroll_length*batch_size x 128]
+                # -- [history x unroll_length*batch_size x hidden_size]
 
                 contexts = torch.cat([contexts, target_contexts], dim=-1)
-                # -- [history x unroll_length*batch_size x 256]
+                # -- [history x unroll_length*batch_size x hidden_size*2]
 
             if core_state is None:
                 core_state = self.initial_state(contexts.shape[1])
 
             contexts, core_state = self.run_sequence(contexts, core_state)
-            # -- [history x unroll_length*batch_size x 128]
+            # -- [history x unroll_length*batch_size x hidden_size]
 
             contextualized_states = contexts.view(self.history, T, B, C)[-1, ...]
-            # -- [unroll_length x batch_size x 128]
+            # -- [unroll_length x batch_size x hidden_size]
         else:
             if shifted_targets is not None:
                 state_embeddings = torch.cat([state_embeddings, shifted_targets], dim=-1)
-                # -- [unroll_length x batch_size x 256]
+                # -- [unroll_length x batch_size x hidden_size]
 
             if core_state is None:
                 core_state = self.initial_state(state_embeddings.shape[1])
 
             contextualized_states, core_state = self.run_sequence(state_embeddings, core_state)
-            # -- [unroll_length x batch_size x 128]
+            # -- [unroll_length x batch_size x hidden_size]
 
         contextualized_states = self.readout(contextualized_states)
+        # -- [unroll_length x batch_size x 128]
         return contextualized_states
 
 
