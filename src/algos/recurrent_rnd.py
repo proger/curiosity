@@ -4,13 +4,11 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import os
 import sys
 import threading
 import time
 import timeit
-import pprint
 
 from celluloid import Camera
 import matplotlib.pyplot as plt
@@ -73,13 +71,7 @@ def learn(actor_model,
                 )
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
-
-        intrinsic_reward_coef = flags.intrinsic_reward_coef
-        intrinsic_rewards *= intrinsic_reward_coef 
-        
-        num_samples = flags.unroll_length * flags.batch_size
-        actions_flat = batch['action'][1:].reshape(num_samples).cpu().detach().numpy()
-        intrinsic_rewards_flat = intrinsic_rewards.reshape(num_samples).cpu().detach().numpy()
+        intrinsic_rewards *= flags.intrinsic_reward_coef
 
         rnd_loss = flags.rnd_loss_coef * \
                 losses.compute_forward_dynamics_loss(predicted_embedding, random_embedding.detach()) 
@@ -136,7 +128,6 @@ def learn(actor_model,
 
         actor_model.load_state_dict(model.state_dict())
 
-        # When adding keys here, do it again in stat_keys below in this file.
         stats = {
             'mean_episode_return': torch.mean(episode_returns).item(),
             'total_loss': total_loss.item(),
@@ -150,7 +141,7 @@ def learn(actor_model,
             'grad_norm_policy': grad_norm_policy.item(),
             'grad_norm_rnd_predictor': grad_norm_rnd_predictor.item(),
             'lr_policy': scheduler.get_lr()[0],
-        }
+        } | {f'stepwise/intrinsic_rewards_{i:02d}': r for i, r in enumerate(torch.mean(intrinsic_rewards, dim=-1).cpu().tolist())}
         return stats
 
 
@@ -269,24 +260,6 @@ def train(flags):
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    logger = logging.getLogger('logfile')
-    stat_keys = [
-        'total_loss',
-        'mean_episode_return',
-        'pg_loss',
-        'baseline_loss',
-        'entropy_loss',
-        'rnd_loss',
-        'mean_rewards',
-        'mean_intrinsic_rewards',
-        'mean_total_rewards',
-        'grad_norm_policy',
-        'grad_norm_rnd_predictor',
-        'lr_policy',
-    ]
-
-    logger.info('# Step\t%s', '\t'.join(stat_keys))
-
     frames, stats = 0, {}
 
 
@@ -304,7 +277,7 @@ def train(flags):
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)
-                to_log.update({k: stats[k] for k in stat_keys})
+                to_log.update({k: stats[k] for k in stats})
                 if wandb.run is not None:
                     wandb.log(to_log)
                 plogger.log(to_log)
@@ -360,8 +333,8 @@ def train(flags):
 
             total_loss = stats.get('total_loss', float('inf'))
             if stats:
-                log.info('After %i frames: loss %f @ %.1f fps. Mean Return %.1f. \n Stats \n %s', \
-                        frames, total_loss, fps, stats['mean_episode_return'], pprint.pformat(stats))
+                log.info('After %i frames: loss %f @ %.1f fps. Mean Return %.1f.', \
+                        frames, total_loss, fps, stats['mean_episode_return'])
 
     except KeyboardInterrupt:
         return  
