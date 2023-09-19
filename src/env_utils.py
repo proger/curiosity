@@ -103,7 +103,7 @@ class Environment:
         return dict(
             frame=frame,
             reward=reward,
-            done=self.last_done,
+            done=self.last_done, # when the episode is done, we're teleporting the agent in a new environment
             episode_return=episode_return,
             episode_step = episode_step,
             episode_win = episode_win,

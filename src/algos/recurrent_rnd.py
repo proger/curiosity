@@ -51,6 +51,7 @@ def learn(actor_model,
           lock=threading.Lock()):
     """Performs a learning (optimization) step."""
     with lock:
+        done = batch['done'][1:].to(device=flags.device)
         if flags.use_fullobs_intrinsic:
             random_embedding = random_target_network(batch, next_state=True)\
                     .reshape(flags.unroll_length, flags.batch_size, 128)        
@@ -62,20 +63,25 @@ def learn(actor_model,
                 # shift random embedding by 1 step to the right
                 shifted_targets = F.pad(random_embedding, (0, 0, 0, 0, 1, 0))[:-1]
 
+                # reset targets to zero when done: it's a respawn point
+                shifted_targets[done] = 0
+
                 predicted_embedding = predictor_network(
                     inputs=batch['partial_obs'][1:].to(device=flags.device),
+                    done=done,
                     shifted_targets=shifted_targets,
                 )
             else:
                 predicted_embedding = predictor_network(
-                    inputs=batch['partial_obs'][1:].to(device=flags.device)
+                    inputs=batch['partial_obs'][1:].to(device=flags.device),
+                    done=done,
                 )
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
         intrinsic_rewards *= flags.intrinsic_reward_coef
 
         rnd_loss = flags.rnd_loss_coef * \
-                losses.compute_forward_dynamics_loss(predicted_embedding, random_embedding.detach()) 
+            (torch.norm(predicted_embedding - random_embedding.detach(), dim=2, p=2)).mean(dim=1).sum()
             
         learner_outputs, unused_state = model(batch, initial_agent_state)
 
@@ -94,7 +100,7 @@ def learn(actor_model,
         else:            
             total_rewards = rewards + intrinsic_rewards
         clipped_rewards = torch.clamp(total_rewards, -1, 1)
-        
+
         discounts = (~batch['done']).float() * flags.discounting
 
         vtrace_returns = vtrace.from_logits(
@@ -441,14 +447,12 @@ def test(
         img = env.render('rgb_array', tile_size=32)
         plt.imshow(img)
         camera.snap()
-        all_done = False
         for action in buffers['action'][0].tolist():
             obs, reward, done, info = env.step(action)
-            all_done = all_done or done
+            if done:
+                break
             img = env.render('rgb_array', tile_size=32)
             plt.imshow(img)
-            if all_done:
-                ax.text(0.5, 1.01, 'beam me up pls', transform=ax.transAxes)
             camera.snap()
         animation = camera.animate()
         animation.save(str(videoroot / f'{seed}.mp4'))

@@ -93,7 +93,7 @@ parser.add_argument('--rnd_loss_coef', default=0.1, type=float,
                     help='Coefficient for the RND loss coefficient relative to the IMPALA one.')
 parser.add_argument('--rnd_history', default=16, type=int,
                     help='Number of history frames to use for computing the Recurrent RND prediction. 0 means use all available history, no padding.')
-parser.add_argument('--rnd_autoregressive', choices=['forward-target', 'forward-target-difference'],
+parser.add_argument('--rnd_autoregressive', choices=['no', 'forward-target', 'forward-target-difference'],
                     help='Use past targets as inputs for Recurrent RND.')
 parser.add_argument('--rnd_lstm_width', default=128, type=int,
                     help='Width of the LSTM used for Recurrent RND.')
