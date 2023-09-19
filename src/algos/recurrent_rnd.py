@@ -195,7 +195,7 @@ def train(flags):
                 env.observation_space.shape,
                 history=flags.rnd_history,
                 autoregressive=flags.rnd_autoregressive,
-                lstm_width=flags.rnd_lstm_width,
+                hidden_size=flags.rnd_lstm_width,
             ).to(device=flags.device)
     else:
         raise NotImplementedError('Only MiniGrid environments are supported at the moment.')
@@ -484,7 +484,7 @@ if __name__ == '__main__':
             env.observation_space.shape,
             history=flags.rnd_history,
             autoregressive=flags.rnd_autoregressive,
-            lstm_width=flags.rnd_lstm_width,
+            hidden_size=flags.rnd_lstm_width,
         ).to(device=flags.device)
         predictor_network.load_state_dict(checkpoint['predictor_network_state_dict'])
 
