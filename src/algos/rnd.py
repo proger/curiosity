@@ -6,6 +6,7 @@
 
 import logging
 import os
+from pathlib import Path
 import sys
 import threading
 import time
@@ -149,7 +150,7 @@ def learn(actor_model,
 
 def train(flags):  
     if flags.xpid is None:
-        flags.xpid = 'curiosity-%s' % time.strftime('%Y%m%d-%H%M%S')
+        flags.xpid = f"{flags.model}-{time.strftime('%Y%m%d-%H%M%S')}"
 
     wandb.init(config=flags)
 
@@ -349,93 +350,130 @@ def train(flags):
     checkpoint(frames)
     plogger.close()
 
-    videopath = os.path.expandvars(
-        os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
-                                         'animation.mp4')))
-    model.load_state_dict(torch.load(checkpointpath)['model_state_dict'])
-    test(model, env, flags, videopath=videopath)
-    wandb.log({'demo': wandb.Video(videopath)})
+    last_checkpoint = torch.load(checkpointpath)
+    model.load_state_dict(last_checkpoint['model_state_dict'])
+    random_target_network.load_state_dict(last_checkpoint['random_target_network_state_dict'])
+    predictor_network.load_state_dict(last_checkpoint['predictor_network_state_dict'])
+    test(model, random_target_network, predictor_network,
+         env=None, flags=flags, videoroot=Path(checkpointpath).parent, seeds=[3,5,8,13,21,34])
 
 
-def test(model, env, flags, videopath='animation.mp4'):
+def test(
+    model,
+    random_target_network,
+    predictor_network,
+    *,
+    env,
+    flags,
+    videoroot=Path('.'),
+    seeds=[3,5,8,13,21,34],
+):
     flags.num_buffers = 1
     flags.fix_seed = True
+    flags.batch_size = 1 # for get_batch
 
-    buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
+    if env is None:
+        env = create_env(flags)
 
-    initial_agent_state_buffers = []
-    for _ in range(flags.num_buffers):
-        state = model.initial_state(batch_size=1)
-        for t in state:
-            t.share_memory_()
-        initial_agent_state_buffers.append(state)
+    stat = {}
 
-    ctx = mp.get_context('spawn')
-    free_queue = ctx.SimpleQueue()
-    full_queue = ctx.SimpleQueue()
+    for seed in seeds:
+        flags.env_seed = seed
+        env.seed(flags.env_seed)
+        buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
 
-    for m in range(flags.num_buffers):
-        free_queue.put(m)
-    free_queue.put(None)
+        initial_agent_state_buffers = []
+        for _ in range(flags.num_buffers):
+            state = model.initial_state(batch_size=1)
+            for t in state:
+                t.share_memory_()
+            initial_agent_state_buffers.append(state)
 
-    episode_state_count_dict = dict()
-    train_state_count_dict = dict()
-    act(0, free_queue, full_queue, model, buffers,
-        episode_state_count_dict, train_state_count_dict,
-        initial_agent_state_buffers, flags)
+        ctx = mp.get_context('spawn')
+        free_queue = ctx.SimpleQueue()
+        full_queue = ctx.SimpleQueue()
 
-    fig = plt.figure()
-    ax = plt.gca()
-    plt.axis('off')
-    camera = Camera(fig)
-    env.seed(flags.env_seed)
-    obs = env.reset()
-    img = env.render('rgb_array', tile_size=32)
-    plt.imshow(img)
-    camera.snap()
-    all_done = False
-    for action in buffers['action'][0].tolist():
-        obs, reward, done, info = env.step(action)
-        all_done = all_done or done
+        for m in range(flags.num_buffers):
+            free_queue.put(m)
+        free_queue.put(None)
+
+        episode_state_count_dict = dict()
+        train_state_count_dict = dict()
+        act(0, free_queue, full_queue, model, buffers,
+            episode_state_count_dict, train_state_count_dict,
+            initial_agent_state_buffers, flags)
+
+        timings = prof.Timings()  
+
+        batch, agent_state = get_batch(free_queue, full_queue, buffers, 
+            initial_agent_state_buffers, flags, timings)
+
+        random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+        predicted_embedding = predictor_network(
+            inputs=batch['partial_obs'][1:].to(device=flags.device)
+        )
+
+        intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
+        (videoroot / f' {seed}.rewards').write_text('\n'.join([str(reward) for reward in intrinsic_rewards.view(-1).cpu().numpy()]))
+
+        # wandb.Table of rewards
+        reward_table = wandb.Table(columns=['step', 'reward'], data=[[i, r] for i, r in enumerate(intrinsic_rewards.view(-1).cpu().tolist())])
+        stat[f'test/rewards-per-step-{seed}'] = wandb.plot.line(reward_table, 'step', 'reward', title=f'rewards per step for seed {seed}')
+
+        fig = plt.figure()
+        ax = plt.gca()
+        plt.axis('off')
+        camera = Camera(fig)
+        env.seed(flags.env_seed)
+        obs = env.reset()
         img = env.render('rgb_array', tile_size=32)
         plt.imshow(img)
-        if all_done:
-            ax.text(0.5, 1.01, 'beam me up pls', transform=ax.transAxes)
         camera.snap()
-    animation = camera.animate()
-    animation.save(videopath)
+        all_done = False
+        for action in buffers['action'][0].tolist():
+            obs, reward, done, info = env.step(action)
+            all_done = all_done or done
+            img = env.render('rgb_array', tile_size=32)
+            plt.imshow(img)
+            if all_done:
+                ax.text(0.5, 1.01, 'beam me up pls', transform=ax.transAxes)
+            camera.snap()
+        animation = camera.animate()
+        animation.save(str(videoroot / f'{seed}.mp4'))
+        stat[f'test/video-{seed}'] = wandb.Video(str(videoroot / f'{seed}.mp4'))
+
+        print('saved', videoroot / f'{seed}.mp4', videoroot / f'{seed}.rewards')
+
+    if wandb.run is not None:
+        wandb.log(stat)
 
 
 if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser('Curiosity-driven Exploration')
-    parser.add_argument('--env', default='MiniGrid-MultiRoom-N7-S4-v0')
-    parser.add_argument('--device', default='cuda')
-    parser.add_argument('--unroll_length', default=100, type=int, metavar='T',
-                    help='The unroll length (time dimension).')
-    parser.add_argument('--trajectory_embed', action='store_true',
-                    help='Use trajectory embedding rather than state embedding')
-    parser.add_argument('--num_buffers', default=1, type=int,
-                    metavar='N', help='Number of shared-memory buffers.')
-    parser.add_argument('--num_actors', default=32, type=int, metavar='N',
-                    help='Number of actors.')
-    parser.add_argument('--num_input_frames', default=1, type=int,
-                    help='Number of input frames to the model and state embedding including the current frame \
-                    When num_input_frames > 1, it will also take the previous num_input_frames - 1 frames as input.')
-    parser.add_argument('--fix_seed', action='store_true',
-                        help='Fix the environment seed so that it is \
-                        no longer procedurally generated but rather the same layout every episode.')
-    parser.add_argument('--env_seed', default=1, type=int,
-                        help='The seed used to generate the environment if we are using a \
-                        singleton (i.e. not procedurally generated) environment.')
-    parser.add_argument('--model', default='rnd', help='Model used for training the agent.')
-    parser.add_argument('checkpoint')
+    from src.arguments import parser
     flags = parser.parse_args()
+    flags.model = 'rnd'
 
-    env = create_env(flags)
+    if flags.test:
+        wandb.init(config=flags)
+        env = create_env(flags)
 
-    model = MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(flags.device)
-    model.load_state_dict(torch.load(flags.checkpoint)['model_state_dict'])
-    model.share_memory()
+        checkpoint = torch.load(str(flags.test))
 
-    test(model, env, flags, videopath='animation.mp4')
+        model = models.MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(flags.device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+
+        random_target_network = models.MinigridStateEmbeddingNet(
+            env.observation_space.shape,
+            final_activation=False,
+        ).to(device=flags.device)
+        random_target_network.load_state_dict(checkpoint['random_target_network_state_dict'])
+
+        predictor_network = MinigridStateEmbeddingNet(
+            env.observation_space.shape,
+            final_activation=False
+        ).to(device=flags.device)
+        predictor_network.load_state_dict(checkpoint['predictor_network_state_dict'])
+
+        test(model, random_target_network, predictor_network, env=None, flags=flags, videoroot=flags.test.parent)
+    else:
+        train(flags)

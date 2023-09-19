@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+from pathlib import Path
 
 parser = argparse.ArgumentParser(
     description='PyTorch Scalable Agent',
@@ -94,6 +95,8 @@ parser.add_argument('--rnd_history', default=16, type=int,
                     help='Number of history frames to use for computing the Recurrent RND prediction. 0 means use all available history, no padding.')
 parser.add_argument('--rnd_autoregressive', choices=['forward-target', 'forward-target-difference'],
                     help='Use past targets as inputs for Recurrent RND.')
+parser.add_argument('--rnd_lstm_width', default=128, type=int,
+                    help='Width of the LSTM used for Recurrent RND.')
 
 # Singleton Environments.
 parser.add_argument('--fix_seed', action='store_true',
@@ -104,7 +107,7 @@ parser.add_argument('--env_seed', default=1, type=int,
                     singleton (i.e. not procedurally generated) environment.')
 parser.add_argument('--no_reward', action='store_true',
                     help='No extrinsic reward. The agent uses only intrinsic reward to learn.')
-parser.add_argument('--test', type=str, help='Test the model using this checkpoint.')
+parser.add_argument('--test', type=Path, help='Test the model using this checkpoint.')
 
 # Training Models.
 parser.add_argument('--model', default='vanilla',
