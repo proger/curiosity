@@ -74,8 +74,6 @@ def learn(actor_model,
         intrinsic_rewards *= intrinsic_reward_coef 
         
         num_samples = flags.unroll_length * flags.batch_size
-        actions_flat = batch['action'][1:].reshape(num_samples).cpu().detach().numpy()
-        intrinsic_rewards_flat = intrinsic_rewards.reshape(num_samples).cpu().detach().numpy()
 
         rnd_loss = flags.rnd_loss_coef * \
                 losses.compute_forward_dynamics_loss(predicted_embedding, random_embedding.detach()) 
@@ -132,7 +130,6 @@ def learn(actor_model,
 
         actor_model.load_state_dict(model.state_dict())
 
-        # When adding keys here, do it again in stat_keys below in this file.
         stats = {
             'mean_episode_return': torch.mean(episode_returns).item(),
             'total_loss': total_loss.item(),
@@ -146,7 +143,7 @@ def learn(actor_model,
             'grad_norm_policy': grad_norm_policy.item(),
             'grad_norm_rnd_predictor': grad_norm_rnd_predictor.item(),
             'lr_policy': scheduler.get_lr()[0],
-        }
+        } | {f'stepwise/intrinsic_rewards_{i:02d}': r for i, r in enumerate(intrinsic_rewards[:, 0].cpu().tolist())}
         return stats
 
 
@@ -261,24 +258,6 @@ def train(flags):
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    logger = logging.getLogger('logfile')
-    stat_keys = [
-        'total_loss',
-        'mean_episode_return',
-        'pg_loss',
-        'baseline_loss',
-        'entropy_loss',
-        'rnd_loss',
-        'mean_rewards',
-        'mean_intrinsic_rewards',
-        'mean_total_rewards',
-        'grad_norm_policy',
-        'grad_norm_rnd_predictor',
-        'lr_policy',
-    ]
-
-    logger.info('# Step\t%s', '\t'.join(stat_keys))
-
     frames, stats = 0, {}
 
 
@@ -296,7 +275,7 @@ def train(flags):
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)
-                to_log.update({k: stats[k] for k in stat_keys})
+                to_log.update({k: stats[k] for k in stats})
                 if wandb.run is not None:
                     wandb.log(to_log)
                 plogger.log(to_log)
