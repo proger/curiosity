@@ -141,7 +141,7 @@ def learn(actor_model,
             'grad_norm_policy': grad_norm_policy.item(),
             'grad_norm_rnd_predictor': grad_norm_rnd_predictor.item(),
             'lr_policy': scheduler.get_lr()[0],
-        } | {f'stepwise/intrinsic_rewards_{i:02d}': r for i, r in enumerate(torch.mean(intrinsic_rewards, dim=-1).cpu().tolist())}
+        } | {f'stepwise/intrinsic_rewards_{i:02d}': r for i, r in enumerate(intrinsic_rewards[:, 0].cpu().tolist())}
         return stats
 
 
