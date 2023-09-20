@@ -4,6 +4,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import logging
 import os
 from pathlib import Path
@@ -299,7 +300,11 @@ def train(flags):
     def checkpoint(frames):
         if flags.disable_checkpoint:
             return
-        log.info('Saving checkpoint to %s', checkpointpath)
+        if flags.save_all_checkpoints:
+            path = Path(checkpointpath).parent / f'{frames}.pt'
+        else:
+            path = Path(checkpointpath)
+        log.info('Saving checkpoint to %s', str(path))
         torch.save({
             'model_state_dict': model.state_dict(),
             'random_target_network_state_dict': random_target_network.state_dict(),
@@ -308,7 +313,10 @@ def train(flags):
             'predictor_optimizer_state_dict': predictor_optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
             'flags': vars(flags),
-        }, checkpointpath)
+        }, str(path))
+        test(model, random_target_network, predictor_network,
+             env=None, flags=flags, videoroot=path.parent,
+             seeds=[3])
 
     timer = timeit.default_timer
     try:
@@ -332,8 +340,8 @@ def train(flags):
 
             total_loss = stats.get('total_loss', float('inf'))
             if stats:
-                log.info('After %i frames: loss %f @ %.1f fps. Mean Return %.1f. \n Stats \n %s', \
-                        frames, total_loss, fps, stats['mean_episode_return'], pprint.pformat(stats))
+                log.info('After %i frames: loss %f @ %.1f fps. Mean Return %.1f.', \
+                        frames, total_loss, fps, stats['mean_episode_return'])
 
     except KeyboardInterrupt:
         return  
@@ -368,6 +376,7 @@ def test(
     videoroot=Path('.'),
     seeds=[3,5,8,13,21,34],
 ):
+    flags = copy.deepcopy(flags)
     flags.num_buffers = 1
     flags.fix_seed = True
     flags.batch_size = 1 # for get_batch
@@ -376,6 +385,8 @@ def test(
         env = create_env(flags)
 
     stat = {}
+
+    videoroot.mkdir(exist_ok=True, parents=True)
 
     for seed in seeds:
         flags.env_seed = seed
@@ -408,39 +419,62 @@ def test(
         batch, agent_state = get_batch(free_queue, full_queue, buffers, 
             initial_agent_state_buffers, flags, timings)
 
+        done = batch['done'][1:].to(device=flags.device)
         random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
         predicted_embedding = predictor_network(
-            inputs=batch['partial_obs'][1:].to(device=flags.device)
+            inputs=batch['partial_obs'][1:].to(device=flags.device),
         )
 
-        intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
-        (videoroot / f' {seed}.rewards').write_text('\n'.join([str(reward) for reward in intrinsic_rewards.view(-1).cpu().numpy()]))
+        intrinsic_rewards = flags.intrinsic_reward_coef * torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
+        intrinsic_rewards_list = intrinsic_rewards.view(-1).cpu().numpy().tolist()
+        (videoroot / f'{seed}.rewards').write_text('\n'.join(map(str, intrinsic_rewards_list)))
 
         # wandb.Table of rewards
         reward_table = wandb.Table(columns=['step', 'reward'], data=[[i, r] for i, r in enumerate(intrinsic_rewards.view(-1).cpu().tolist())])
         stat[f'test/rewards-per-step-{seed}'] = wandb.plot.line(reward_table, 'step', 'reward', title=f'rewards per step for seed {seed}')
 
-        fig = plt.figure()
-        ax = plt.gca()
-        plt.axis('off')
-        camera = Camera(fig)
-        env.seed(flags.env_seed)
-        obs = env.reset()
-        img = env.render('rgb_array', tile_size=32)
-        plt.imshow(img)
-        camera.snap()
-        for action in buffers['action'][0].tolist():
-            obs, reward, done, info = env.step(action)
-            if done:
-                break
-            img = env.render('rgb_array', tile_size=32)
-            plt.imshow(img)
-            camera.snap()
-        animation = camera.animate()
-        animation.save(str(videoroot / f'{seed}.mp4'))
-        stat[f'test/video-{seed}'] = wandb.Video(str(videoroot / f'{seed}.mp4'))
+        # returns
+        episode_returns = batch['episode_return'][batch['done']]
+        stat[f'test/returns-{seed}'] = torch.mean(episode_returns).item()
+        stat[f'test/ext-rewards-{seed}'] = batch['reward'].sum().item()
 
-        print('saved', videoroot / f'{seed}.mp4', videoroot / f'{seed}.rewards')
+        actions = { # MiniGrid
+            0: 'left',
+            1: 'right',
+            2: 'forward',
+            3: 'pickup UNUSED',
+            4: 'drop UNUSED',
+            5: 'toggle',
+            6: 'done UNUSED',
+        }
+        if flags.video:
+            fig, (axl, axr) = plt.subplots(2,1,gridspec_kw={'height_ratios': [2, 1]}, figsize=(8,16))
+            plt.axis('off')
+            plt.tight_layout()
+            camera = Camera(fig)
+            env.seed(flags.env_seed)
+            obs = env.reset()
+            img = env.render('rgb_array', tile_size=32)
+            axl.imshow(img)
+            axr.set_title('dopamine')
+            camera.snap()
+            #for action in buffers['action'][0].tolist():
+            for i, action in enumerate(batch['action'][1:,0].tolist()):
+                obs, reward, done, info = env.step(action)
+                if done:
+                    break
+                img = env.render('rgb_array', tile_size=32)
+                axl.imshow(img)
+                axr.text(0.1, 1.0, actions[action], transform=axr.transAxes, fontsize='large')
+                axr.plot(intrinsic_rewards_list[:i+1], marker='x')
+                camera.snap()
+            animation = camera.animate()
+            animation.save(str(videoroot / f'{seed}.mp4'))
+            stat[f'test/video-{seed}'] = wandb.Video(str(videoroot / f'{seed}.mp4'))
+
+            print('saved', videoroot / f'{seed}.mp4', videoroot / f'{seed}.rewards')
+        else:
+            print('saved', videoroot / f'{seed}.rewards')
 
     if wandb.run is not None:
         wandb.log(stat)
@@ -468,7 +502,7 @@ if __name__ == '__main__':
 
         predictor_network = MinigridStateEmbeddingNet(
             env.observation_space.shape,
-            final_activation=False
+            final_activation=False,
         ).to(device=flags.device)
         predictor_network.load_state_dict(checkpoint['predictor_network_state_dict'])
 
