@@ -210,6 +210,14 @@ def train(flags):
         random_target_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
         predictor_network = MarioDoomStateEmbeddingNet(env.observation_space.shape).to(device=flags.device)
 
+    wandb.config.params_policy = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    wandb.config.params_rnd_predictor = sum(p.numel() for p in predictor_network.parameters() if p.requires_grad)
+    wandb.config.params_rnd_target = sum(p.numel() for p in random_target_network.parameters() if p.requires_grad)
+    log.info('Number of parameters: policy %d, rnd_predictor %d, rnd_target %d',
+                wandb.config.params_policy,
+                wandb.config.params_rnd_predictor,
+                wandb.config.params_rnd_target)
+
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
     
     model.share_memory()
