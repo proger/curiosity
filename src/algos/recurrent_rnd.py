@@ -438,33 +438,44 @@ def test(
             )
 
         intrinsic_rewards = flags.intrinsic_reward_coef * torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
-        (videoroot / f' {seed}.rewards').write_text('\n'.join([str(reward) for reward in intrinsic_rewards.view(-1).cpu().numpy()]))
+        (videoroot / f'{seed}.rewards').write_text('\n'.join([str(reward) for reward in intrinsic_rewards.view(-1).cpu().numpy()]))
 
         # wandb.Table of rewards
         reward_table = wandb.Table(columns=['step', 'reward'], data=[[i, r] for i, r in enumerate(intrinsic_rewards.view(-1).cpu().tolist())])
         stat[f'test/rewards-per-step-{seed}'] = wandb.plot.line(reward_table, 'step', 'reward', title=f'rewards per step for seed {seed}')
 
-        fig = plt.figure()
-        ax = plt.gca()
-        plt.axis('off')
-        camera = Camera(fig)
-        env.seed(flags.env_seed)
-        obs = env.reset()
-        img = env.render('rgb_array', tile_size=32)
-        plt.imshow(img)
-        camera.snap()
-        for action in buffers['action'][0].tolist():
-            obs, reward, done, info = env.step(action)
-            if done:
-                break
+        # returns
+        episode_returns = batch['episode_return'][batch['done']]
+        stat[f'test/returns-{seed}'] = torch.mean(episode_returns).item()
+        stat[f'test/ext-rewards-{seed}'] = batch['reward'].sum().item()
+
+        #import ipdb; ipdb.set_trace()
+
+        if flags.video:
+            fig = plt.figure()
+            ax = plt.gca()
+            plt.axis('off')
+            camera = Camera(fig)
+            env.seed(flags.env_seed)
+            obs = env.reset()
             img = env.render('rgb_array', tile_size=32)
             plt.imshow(img)
             camera.snap()
-        animation = camera.animate()
-        animation.save(str(videoroot / f'{seed}.mp4'))
-        stat[f'test/video-{seed}'] = wandb.Video(str(videoroot / f'{seed}.mp4'))
+            #for action in buffers['action'][0].tolist():
+            for action in batch['action'][1:,0].tolist():
+                obs, reward, done, info = env.step(action)
+                if done:
+                    break
+                img = env.render('rgb_array', tile_size=32)
+                plt.imshow(img)
+                camera.snap()
+            animation = camera.animate()
+            animation.save(str(videoroot / f'{seed}.mp4'))
+            stat[f'test/video-{seed}'] = wandb.Video(str(videoroot / f'{seed}.mp4'))
 
-        print('saved', videoroot / f'{seed}.mp4', videoroot / f'{seed}.rewards')
+            print('saved', videoroot / f'{seed}.mp4', videoroot / f'{seed}.rewards')
+        else:
+            print('saved', videoroot / f'{seed}.rewards')
 
     if wandb.run is not None:
         wandb.log(stat)

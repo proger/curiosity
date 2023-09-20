@@ -108,6 +108,7 @@ parser.add_argument('--env_seed', default=1, type=int,
 parser.add_argument('--no_reward', action='store_true',
                     help='No extrinsic reward. The agent uses only intrinsic reward to learn.')
 parser.add_argument('--test', type=Path, help='Test the model using this checkpoint.')
+parser.add_argument('--video', action='store_true', help='Record a video of the agent.')
 
 # Training Models.
 parser.add_argument('--model', default='vanilla',
