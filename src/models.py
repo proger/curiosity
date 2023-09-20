@@ -505,7 +505,7 @@ class MinigridStateSequenceNet(nn.Module):
         x = self.run_sequence(x, done)
 
         if self.history >= 0:
-            x = x.view(self.history, T, B, C)[-1, ...]
+            x = x.view(max(1, self.history), T, B, C)[-1, ...]
 
         x = self.readout(x)
         return x
