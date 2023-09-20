@@ -437,7 +437,7 @@ def test(
                 done=done,
             )
 
-        intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
+        intrinsic_rewards = flags.intrinsic_reward_coef * torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
         (videoroot / f' {seed}.rewards').write_text('\n'.join([str(reward) for reward in intrinsic_rewards.view(-1).cpu().numpy()]))
 
         # wandb.Table of rewards
