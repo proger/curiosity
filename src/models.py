@@ -437,12 +437,14 @@ class MinigridStateSequenceNet(nn.Module):
 
         # pad unroll_length on the left with self.history-1 zeros
         T, B, C = x.shape
-        x = F.pad(x, (0, 0, 0, 0, self.history-1, 0))
+        history = max(1, self.history)
 
-        x_windows = x.unfold(0, self.history, 1)
+        x = F.pad(x, (0, 0, 0, 0, history-1, 0))
+
+        x_windows = x.unfold(0, history, 1)
         # -- [unroll_length x batch_size x d x history]
 
-        x_contexts = x_windows.permute(3, 0, 1, 2).contiguous().view(self.history, T*B, C)
+        x_contexts = x_windows.permute(3, 0, 1, 2).contiguous().view(history, T*B, C)
         # -- [history x unroll_length x batch_size x d]
         # -- [history x unroll_length*batch_size x d]
 
