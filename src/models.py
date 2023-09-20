@@ -456,7 +456,7 @@ class MinigridStateSequenceNet(nn.Module):
         done, # [history x unroll_length*batch_size x 1]
     ):
         if self.autoregressive in ['forward-target', 'forward-target-difference']:
-            assert x.shape[0] == self.history
+            assert x.shape[0] == max(1, self.history)
 
         zero_hidden, zero_cell = self.initial_state(x.shape[1])
 
