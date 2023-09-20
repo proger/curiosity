@@ -67,6 +67,10 @@ def learn(actor_model,
                 # reset targets to zero when done: it's a respawn point
                 shifted_targets[done] = 0
 
+                if flags.rnd_history == 0:
+                    # no history
+                    shifted_targets = torch.zeros_like(shifted_targets)
+
                 predicted_embedding = predictor_network(
                     inputs=batch['partial_obs'][1:].to(device=flags.device),
                     done=done,
