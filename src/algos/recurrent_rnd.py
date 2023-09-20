@@ -417,18 +417,24 @@ def test(
         batch, agent_state = get_batch(free_queue, full_queue, buffers, 
             initial_agent_state_buffers, flags, timings)
 
+        done = batch['done'][1:].to(device=flags.device)
         random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
         if flags.rnd_autoregressive is not None:
             # shift random embedding by 1 step to the right
             shifted_targets = F.pad(random_embedding, (0, 0, 0, 0, 1, 0))[:-1]
 
+            # reset targets to zero when done: it's a respawn point
+            shifted_targets[done] = 0
+
             predicted_embedding = predictor_network(
                 inputs=batch['partial_obs'][1:].to(device=flags.device),
+                done=done,
                 shifted_targets=shifted_targets,
             )
         else:
             predicted_embedding = predictor_network(
-                inputs=batch['partial_obs'][1:].to(device=flags.device)
+                inputs=batch['partial_obs'][1:].to(device=flags.device),
+                done=done,
             )
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
