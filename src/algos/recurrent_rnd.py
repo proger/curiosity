@@ -4,6 +4,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import os
 from pathlib import Path
 import sys
@@ -308,7 +309,11 @@ def train(flags):
     def checkpoint(frames):
         if flags.disable_checkpoint:
             return
-        log.info('Saving checkpoint to %s', checkpointpath)
+        if flags.save_all_checkpoints:
+            path = Path(checkpointpath).parent / f'{frames}.pt'
+        else:
+            path = Path(checkpointpath)
+        log.info('Saving checkpoint to %s', str(path))
         torch.save({
             'model_state_dict': model.state_dict(),
             'random_target_network_state_dict': random_target_network.state_dict(),
@@ -317,7 +322,10 @@ def train(flags):
             'predictor_optimizer_state_dict': predictor_optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
             'flags': vars(flags),
-        }, checkpointpath)
+        }, str(path))
+        test(model, random_target_network, predictor_network,
+             env=None, flags=flags, videoroot=path.parent,
+             seeds=[3])
 
     timer = timeit.default_timer
     try:
@@ -377,6 +385,7 @@ def test(
     videoroot=Path('.'),
     seeds=[3,5,8,13,21,34],
 ):
+    flags = copy.deepcopy(flags)
     flags.num_buffers = 1
     flags.fix_seed = True
     flags.batch_size = 1 # for get_batch
@@ -385,6 +394,8 @@ def test(
         env = create_env(flags)
 
     stat = {}
+
+    videoroot.mkdir(exist_ok=True, parents=True)
 
     for seed in seeds:
         flags.env_seed = seed
@@ -438,7 +449,8 @@ def test(
             )
 
         intrinsic_rewards = flags.intrinsic_reward_coef * torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
-        (videoroot / f'{seed}.rewards').write_text('\n'.join([str(reward) for reward in intrinsic_rewards.view(-1).cpu().numpy()]))
+        intrinsic_rewards_list = intrinsic_rewards.view(-1).cpu().numpy().tolist()
+        (videoroot / f'{seed}.rewards').write_text('\n'.join(map(str, intrinsic_rewards_list)))
 
         # wandb.Table of rewards
         reward_table = wandb.Table(columns=['step', 'reward'], data=[[i, r] for i, r in enumerate(intrinsic_rewards.view(-1).cpu().tolist())])
@@ -449,25 +461,35 @@ def test(
         stat[f'test/returns-{seed}'] = torch.mean(episode_returns).item()
         stat[f'test/ext-rewards-{seed}'] = batch['reward'].sum().item()
 
-        #import ipdb; ipdb.set_trace()
-
+        actions = { # MiniGrid
+            0: 'left',
+            1: 'right',
+            2: 'forward',
+            3: 'pickup UNUSED',
+            4: 'drop UNUSED',
+            5: 'toggle',
+            6: 'done UNUSED',
+        }
         if flags.video:
-            fig = plt.figure()
-            ax = plt.gca()
+            fig, (axl, axr) = plt.subplots(2,1,gridspec_kw={'height_ratios': [2, 1]}, figsize=(8,16))
             plt.axis('off')
+            plt.tight_layout()
             camera = Camera(fig)
             env.seed(flags.env_seed)
             obs = env.reset()
             img = env.render('rgb_array', tile_size=32)
-            plt.imshow(img)
+            axl.imshow(img)
+            axr.set_title('dopamine')
             camera.snap()
             #for action in buffers['action'][0].tolist():
-            for action in batch['action'][1:,0].tolist():
+            for i, action in enumerate(batch['action'][1:,0].tolist()):
                 obs, reward, done, info = env.step(action)
                 if done:
                     break
                 img = env.render('rgb_array', tile_size=32)
-                plt.imshow(img)
+                axl.imshow(img)
+                axr.text(0.1, 1.0, actions[action], transform=axr.transAxes, fontsize='large')
+                axr.plot(intrinsic_rewards_list[:i+1], marker='x')
                 camera.snap()
             animation = camera.animate()
             animation.save(str(videoroot / f'{seed}.mp4'))
