@@ -71,6 +71,8 @@ def learn(actor_model,
                     inputs=batch['partial_obs'][1:].to(device=flags.device),
                     done=done,
                 )
+
+                # norm over hidden (2), mean over batch (1), sum over time (0)
                 rnd_loss = (torch.norm(predicted_embedding - random_embedding.detach(), dim=2, p=2)).mean(dim=1).sum()
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
@@ -197,6 +199,7 @@ def train(flags):
                 history=flags.rnd_history,
                 autoregressive=flags.rnd_autoregressive,
                 hidden_size=flags.rnd_lstm_width,
+                supervise_everything=flags.rnd_supervise_everything,
             ).to(device=flags.device)
     else:
         raise NotImplementedError('Only MiniGrid environments are supported at the moment.')
@@ -535,6 +538,7 @@ if __name__ == '__main__':
             history=flags.rnd_history,
             autoregressive=flags.rnd_autoregressive,
             hidden_size=flags.rnd_lstm_width,
+            supervise_everything=flags.rnd_supervise_everything,
         ).to(device=flags.device)
         predictor_network.load_state_dict(checkpoint['predictor_network_state_dict'])
 
