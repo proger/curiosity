@@ -111,7 +111,8 @@ parser.add_argument('--env_seed', default=1, type=int,
                     singleton (i.e. not procedurally generated) environment.')
 parser.add_argument('--no_reward', action='store_true',
                     help='No extrinsic reward. The agent uses only intrinsic reward to learn.')
-parser.add_argument('--test', type=Path, help='Test the model using this checkpoint.')
+parser.add_argument('--test', type=Path, help='Test the agent using this policy checkpoint.')
+parser.add_argument('--test_rnd', type=Path, help='Test the agent using this RND checkpoint (allows to use reward model and a policy from different checkpoints).')
 parser.add_argument('--video', action='store_true', help='Record a video of the agent.')
 
 # Training Models.

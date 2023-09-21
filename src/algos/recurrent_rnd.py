@@ -489,7 +489,7 @@ def test(
         }
         if flags.video:
             fig, (axl, axr) = plt.subplots(2,1,gridspec_kw={'height_ratios': [2, 1]}, figsize=(8,16))
-            plt.axis('off')
+            #plt.axis('off')
             plt.tight_layout()
             camera = Camera(fig)
             env.seed(flags.env_seed)
@@ -533,6 +533,10 @@ if __name__ == '__main__':
 
         model = models.MinigridPolicyNet(env.observation_space.shape, env.action_space.n).to(flags.device)
         model.load_state_dict(checkpoint['model_state_dict'])
+
+        if flags.test_rnd:
+            # use a different checkpoint for the reward model
+            checkpoint = torch.load(str(flags.test_rnd))
 
         random_target_network = models.MinigridStateEmbeddingNet(
             env.observation_space.shape,
