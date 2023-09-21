@@ -273,7 +273,8 @@ def train(flags):
         lr=flags.learning_rate,
         momentum=flags.momentum,
         eps=flags.epsilon,
-        alpha=flags.alpha)
+        alpha=flags.alpha,
+        weight_decay=flags.rnd_weight_decay)
     
 
     def lr_lambda(epoch):

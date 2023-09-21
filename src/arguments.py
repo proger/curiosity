@@ -77,6 +77,8 @@ parser.add_argument('--momentum', default=0, type=float,
                     help='RMSProp momentum.')
 parser.add_argument('--epsilon', default=1e-5, type=float,
                     help='RMSProp epsilon.')
+parser.add_argument('--rnd_weight_decay', default=0.01, type=float,
+                    help='Weight decay for RND.')
 
 # Exploration Settings.
 parser.add_argument('--forward_loss_coef', default=10.0, type=float,
