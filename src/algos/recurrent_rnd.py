@@ -261,21 +261,27 @@ def train(flags):
         learner_model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)\
             .to(device=flags.device)
 
+
     optimizer = torch.optim.RMSprop(
         learner_model.parameters(),
         lr=flags.policy_learning_rate,
         momentum=flags.momentum,
         eps=flags.epsilon,
         alpha=flags.alpha)
-    
-    predictor_optimizer = torch.optim.RMSprop(
-        predictor_network.parameters(),
-        lr=flags.learning_rate,
-        momentum=flags.momentum,
-        eps=flags.epsilon,
-        alpha=flags.alpha,
-        weight_decay=flags.rnd_weight_decay)
-    
+
+    if flags.rnd_optimizer == 'adamw':
+        predictor_optimizer = torch.optim.AdamW(
+            predictor_network.parameters(),
+            lr=flags.learning_rate,
+            weight_decay=flags.rnd_weight_decay)
+    else:
+        predictor_optimizer = torch.optim.RMSprop(
+            predictor_network.parameters(),
+            lr=flags.learning_rate,
+            momentum=flags.momentum,
+            eps=flags.epsilon,
+            alpha=flags.alpha,
+            weight_decay=flags.rnd_weight_decay)
 
     def lr_lambda(epoch):
         return 1 - min(epoch * T * B, flags.total_frames) / flags.total_frames
