@@ -61,33 +61,23 @@ def learn(actor_model,
         else:
             random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
             if flags.rnd_autoregressive is not None and flags.rnd_autoregressive != 'no':
-                # shift random embedding by 1 step to the right
-                shifted_targets = F.pad(random_embedding, (0, 0, 0, 0, 1, 0))[:-1]
-
-                # reset targets to zero when done: it's a respawn point
-                shifted_targets[done] = 0
-
-                if flags.rnd_history == 0:
-                    # no history
-                    shifted_targets = torch.zeros_like(shifted_targets)
-
-                predicted_embedding = predictor_network(
+                predicted_embedding, rnd_loss = predictor_network(
                     inputs=batch['partial_obs'][1:].to(device=flags.device),
                     done=done,
-                    shifted_targets=shifted_targets,
+                    targets=random_embedding.detach(),
                 )
             else:
                 predicted_embedding = predictor_network(
                     inputs=batch['partial_obs'][1:].to(device=flags.device),
                     done=done,
                 )
+                rnd_loss = (torch.norm(predicted_embedding - random_embedding.detach(), dim=2, p=2)).mean(dim=1).sum()
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
         intrinsic_rewards *= flags.intrinsic_reward_coef
 
-        rnd_loss = flags.rnd_loss_coef * \
-            (torch.norm(predicted_embedding - random_embedding.detach(), dim=2, p=2)).mean(dim=1).sum()
-            
+        rnd_loss = flags.rnd_loss_coef * rnd_loss
+
         learner_outputs, unused_state = model(batch, initial_agent_state)
 
         bootstrap_value = learner_outputs['baseline'][-1]
@@ -450,20 +440,10 @@ def test(
         done = batch['done'][1:].to(device=flags.device)
         random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
         if flags.rnd_autoregressive is not None and flags.rnd_autoregressive != 'no':
-            # shift random embedding by 1 step to the right
-            shifted_targets = F.pad(random_embedding, (0, 0, 0, 0, 1, 0))[:-1]
-
-            # reset targets to zero when done: it's a respawn point
-            shifted_targets[done] = 0
-
-            if flags.rnd_history == 0:
-                # no history
-                shifted_targets = torch.zeros_like(shifted_targets)
-
-            predicted_embedding = predictor_network(
+            predicted_embedding, _ = predictor_network(
                 inputs=batch['partial_obs'][1:].to(device=flags.device),
                 done=done,
-                shifted_targets=shifted_targets,
+                targets=random_embedding.detach(),
             )
         else:
             predicted_embedding = predictor_network(

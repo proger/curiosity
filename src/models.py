@@ -456,7 +456,7 @@ class MinigridStateSequenceNet(nn.Module):
         done, # [history x unroll_length*batch_size x 1]
     ):
         if self.autoregressive in ['forward-target', 'forward-target-difference']:
-            assert x.shape[0] == max(1, self.history)
+            assert self.history == -1 or x.shape[0] == max(1, self.history)
 
         zero_hidden, zero_cell = self.initial_state(x.shape[1])
 
@@ -465,7 +465,7 @@ class MinigridStateSequenceNet(nn.Module):
         input = x[0, ...]
         hidden, cell = self.core(input, (zero_hidden, zero_cell))
         outputs = [hidden]
-        for i in range(1, self.history):
+        for i in range(1, x.shape[0]):
             hidden = torch.where(done[i], zero_hidden, hidden)
             cell = torch.where(done[i], zero_cell, cell)
 
@@ -484,11 +484,23 @@ class MinigridStateSequenceNet(nn.Module):
         return torch.stack(outputs)
 
 
-    def forward(self, inputs, *, done, shifted_targets=None):
-        if shifted_targets is not None:
+    def forward(self, inputs, *, done, targets=None):
+        if targets is not None:
+            # shift random embedding by 1 step to the right
+            shifted_targets = F.pad(targets, (0, 0, 0, 0, 1, 0))[:-1]
+
+            # reset targets to zero when done: it's a respawn point
+            shifted_targets[done] = 0
+
+            if self.history == 0:
+                # no history
+                shifted_targets = torch.zeros_like(shifted_targets)
+
             x = self.embed(inputs)
             x = torch.cat([x, shifted_targets], dim=-1)
             x = self.readin(x)
+
+            D = targets.shape[-1]
         else:
             x = self.embed(inputs)
             x = self.readin(x)
@@ -501,14 +513,26 @@ class MinigridStateSequenceNet(nn.Module):
             T, B, C = x.shape
             x = self.pad_unfold(x)
             done = self.pad_unfold(done)
+            if targets is not None:
+                targets = self.pad_unfold(targets)
 
         x = self.run_sequence(x, done)
 
-        if self.history >= 0:
-            x = x.view(max(1, self.history), T, B, C)[-1, ...]
+        if targets is not None:
+            x = self.readout(x)
 
-        x = self.readout(x)
-        return x
+            # compute the loss that supervises all intermediate targets
+            # norm over hidden, mean over batch (1) and time (0)
+            rnd_loss = (torch.norm(x - targets, dim=2, p=2)).mean(dim=(0,1))
+
+            if self.history >= 0:
+                x = x.view(max(1, self.history), T, B, D)[-1, ...]
+            return x, rnd_loss
+        else:
+            if self.history >= 0:
+                x = x.view(max(1, self.history), T, B, C)[-1, ...]
+            x = self.readout(x)
+            return x
 
 
 class MinigridTrajectoryEmbeddingNet(nn.Module):
