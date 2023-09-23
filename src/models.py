@@ -407,11 +407,13 @@ class MinigridStateSequenceNet(nn.Module):
         autoregressive=None,
         hidden_size=128,
         supervise_everything=False,
+        supervise_early=False,
     ):
         super().__init__()
         self.autoregressive = autoregressive
         self.history = history
         self.supervise_everything = supervise_everything
+        self.supervise_early = supervise_early
 
         self.embed = MinigridStateEmbeddingNet(observation_shape, final_activation=True)
         self.hidden_size = hidden_size
@@ -502,7 +504,13 @@ class MinigridStateSequenceNet(nn.Module):
 
 
     def forward(self, inputs, *, done, targets=None): # targets must be present when auto-regressive
+        rnd_loss = 0.
         if targets is not None:
+            x = self.embed(inputs)
+
+            if self.supervise_early:
+                rnd_loss = (torch.norm(x - targets, dim=2, p=2)).mean(dim=1).sum()
+
             # shift random embedding by 1 step to the right
             shifted_targets = F.pad(targets, (0, 0, 0, 0, 1, 0))[:-1]
 
@@ -513,7 +521,6 @@ class MinigridStateSequenceNet(nn.Module):
                 # no history
                 shifted_targets = torch.zeros_like(shifted_targets)
 
-            x = self.embed(inputs)
             x = torch.cat([x, shifted_targets], dim=-1)
 
             if self.autoregressive != 'forward-target-difference':
@@ -544,18 +551,18 @@ class MinigridStateSequenceNet(nn.Module):
                 targets = targets.view(max(1, self.history), T, B, D)
 
                 # norm over hidden, mean over batch, sum over time (0)
-                rnd_loss = (torch.norm(x - targets, dim=-1, p=2)).mean(dim=-1).sum(dim=1)
+                rnd_loss1 = (torch.norm(x - targets, dim=-1, p=2)).mean(dim=-1).sum(dim=1)
 
                 if self.supervise_everything:
                     # supervise all intermediate targets
-                    rnd_loss = rnd_loss.mean()
+                    rnd_loss += rnd_loss1.mean()
                 else:
-                    rnd_loss = rnd_loss[-1]
+                    rnd_loss += rnd_loss1[-1]
 
                 x = x[-1, ...]
             else:
                 # norm over hidden, mean over batch (1), sum over time (0)
-                rnd_loss = (torch.norm(x - targets, dim=2, p=2)).mean(dim=-1).sum()
+                rnd_loss += (torch.norm(x - targets, dim=2, p=2)).mean(dim=-1).sum()
 
             return x, rnd_loss
         else:

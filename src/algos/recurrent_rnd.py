@@ -200,6 +200,7 @@ def train(flags):
                 autoregressive=flags.rnd_autoregressive,
                 hidden_size=flags.rnd_lstm_width,
                 supervise_everything=flags.rnd_supervise_everything,
+                supervise_early=flags.rnd_supervise_early,
             ).to(device=flags.device)
     else:
         raise NotImplementedError('Only MiniGrid environments are supported at the moment.')
@@ -539,6 +540,7 @@ if __name__ == '__main__':
             autoregressive=flags.rnd_autoregressive,
             hidden_size=flags.rnd_lstm_width,
             supervise_everything=flags.rnd_supervise_everything,
+            supervise_early=flags.rnd_supervise_early,
         ).to(device=flags.device)
         predictor_network.load_state_dict(checkpoint['predictor_network_state_dict'])
 

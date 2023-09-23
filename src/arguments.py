@@ -105,6 +105,8 @@ parser.add_argument('--rnd_lstm_width', default=128, type=int,
                     help='Width of the LSTM used for Recurrent RND.')
 parser.add_argument('--rnd_supervise_everything', type=bool,
                     help='Supervise all intermediary windowed LSTM outputs with the ground truth.')
+parser.add_argument('--rnd_supervise_early', type=bool,
+                    help='Supervise LSTM inputs with the ground truth (assumes some autoregression).')
 
 # Singleton Environments.
 parser.add_argument('--fix_seed', action='store_true',
