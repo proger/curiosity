@@ -238,6 +238,8 @@ def evaluate(
         stats = {
             'valid/rnd_loss': flags.rnd_loss_coef * rnd_loss.item(),
         } | {f'valid-stepwise/intrinsic_rewards_{i:02d}': r for i, r in enumerate(intrinsic_rewards[:, 0].cpu().tolist())}
+        if wandb.run is not None:
+            wandb.log(stats)
         return stats
 
 
