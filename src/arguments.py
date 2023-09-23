@@ -57,6 +57,8 @@ parser.add_argument('--disable_cuda', action='store_true',
 parser.add_argument('--device', type=str, default='cuda')
 parser.add_argument('--max_grad_norm', default=40., type=float,
                     metavar='MGN', help='Max norm of gradients.')
+parser.add_argument('--megabuffer', action='store_true',
+                    help='Store megabuffers with all experience.')
 
 # Loss settings.
 parser.add_argument('--entropy_cost', default=0.0001, type=float,

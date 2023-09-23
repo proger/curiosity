@@ -30,7 +30,7 @@ import src.models as models
 import src.losses as losses
 
 from src.env_utils import FrameStack
-from src.utils import get_batch, log, create_env, create_buffers, act
+from src.utils import get_batch, log, create_env, create_buffers, act, cat_buffers
 
 MarioDoomPolicyNet = models.MarioDoomPolicyNet
 MarioDoomStateEmbeddingNet = models.MarioDoomStateEmbeddingNet
@@ -161,6 +161,8 @@ def train(flags):
         rootdir=flags.savedir,
     )
 
+    exproot = Path(flags.savedir) / flags.xpid
+    exproot.mkdir(parents=True, exist_ok=True)
     checkpointpath = os.path.expandvars(
         os.path.expanduser('%s/%s/%s' % (flags.savedir, flags.xpid,
                                          'model.tar')))
@@ -289,10 +291,13 @@ def train(flags):
         """Thread target for the learning process."""
         nonlocal frames, stats
         timings = prof.Timings()
+        megabuffer = None
         while frames < flags.total_frames:
             timings.reset()
             batch, agent_state = get_batch(free_queue, full_queue, buffers, 
                 initial_agent_state_buffers, flags, timings)
+            if flags.megabuffer:
+                megabuffer = cat_buffers(megabuffer, batch)
             stats = learn(model, learner_model, random_target_network, predictor_network,
                           batch, agent_state, optimizer, predictor_optimizer, scheduler, 
                           flags, frames=frames)
@@ -304,6 +309,12 @@ def train(flags):
                     wandb.log(to_log)
                 plogger.log(to_log)
                 frames += T * B
+
+            # write megabuffer to disk after T*B*100 frames
+            if frames % (T * B * 100) == 0 and megabuffer is not None:
+                from safetensors.torch import save_file
+                save_file(megabuffer, exproot / f'{frames:010d}.megabuffer')
+                megabuffer = None
 
         if i == 0:
             log.info('Batch and learn: %s', timings.summary())

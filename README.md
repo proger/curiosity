@@ -6,7 +6,7 @@ Environment setup.
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install wandb celluloid
+.venv/bin/pip install wandb celluloid safetensors
 .venv/bin/pip install virtualenv
 .venv/bin/pip install -r new_requirements.txt -I
 .venv/bin/pip install -e ./gym-minigrid

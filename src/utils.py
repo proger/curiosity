@@ -160,6 +160,11 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
             buffers[key].append(torch.empty(**specs[key]).share_memory_())
     return buffers
 
+def cat_buffers(*args):
+    if args[0] is None:
+        return cat_buffers(*args[1:])
+    return {key: torch.cat([arg[key].cpu() for arg in args], dim=1)
+            for key in args[0]}
 
 def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
         model: torch.nn.Module, buffers: Buffers, 
