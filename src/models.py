@@ -457,36 +457,51 @@ class MinigridStateSequenceNet(nn.Module):
         x, # [history x unroll_length*batch_size x d]
         done, # [history x unroll_length*batch_size x 1]
     ):
-        if self.autoregressive in ['forward-target', 'forward-target-difference']:
+        forward_target_difference = self.autoregressive == 'forward-target-difference'
+        forward_target = self.autoregressive == 'forward-target'
+        if forward_target_difference or forward_target:
             assert self.history == -1 or x.shape[0] == max(1, self.history)
 
         zero_hidden, zero_cell = self.initial_state(x.shape[1])
 
         outputs = []
 
-        input = x[0, ...]
-        hidden, cell = self.core(input, (zero_hidden, zero_cell))
-        outputs = [hidden]
+        if forward_target_difference:
+            input = self.readin(x[0, ...])
+            hidden, cell = self.core(input, (zero_hidden, zero_cell))
+            outputs = [self.readout(hidden)]
+        else:
+            input = x[0, ...]
+            hidden, cell = self.core(input, (zero_hidden, zero_cell))
+            outputs = [hidden]
+
         for i in range(1, x.shape[0]):
             hidden = torch.where(done[i], zero_hidden, hidden)
             cell = torch.where(done[i], zero_cell, cell)
 
-            if self.autoregressive == 'forward-target-difference':
-                # pad output with 128 zeros where state should be
-                ar_output = F.pad(hidden, (128, 0))
+            if forward_target_difference:
+                # pad output with d//2 zeros where state should be (at the "top")
+                # even if the episode is reset we're still adding error from the past observation
+                ar_output = F.pad(outputs[-1], (x.shape[-1]//2, 0))
+
                 # set the next input to be the difference
                 # between the current input and the previous output
                 input = x[i, ...] - ar_output
+                input = self.readin(input)
+                hidden, cell = self.core(input, (hidden, cell))
+                outputs.append(self.readout(hidden))
             else:
                 input = x[i, ...]
+                hidden, cell = self.core(input, (hidden, cell))
+                outputs.append(hidden)
 
-            hidden, cell = self.core(input, (hidden, cell))
-            outputs.append(hidden)
+        outputs = torch.stack(outputs)
+        if not forward_target_difference:
+            outputs = self.readout(outputs)
+        return outputs
 
-        return torch.stack(outputs)
 
-
-    def forward(self, inputs, *, done, targets=None):
+    def forward(self, inputs, *, done, targets=None): # targets must be present when auto-regressive
         if targets is not None:
             # shift random embedding by 1 step to the right
             shifted_targets = F.pad(targets, (0, 0, 0, 0, 1, 0))[:-1]
@@ -500,7 +515,10 @@ class MinigridStateSequenceNet(nn.Module):
 
             x = self.embed(inputs)
             x = torch.cat([x, shifted_targets], dim=-1)
-            x = self.readin(x)
+
+            if self.autoregressive != 'forward-target-difference':
+                # this can be done once up front
+                x = self.readin(x)
 
             D = targets.shape[-1]
         else:
@@ -521,8 +539,6 @@ class MinigridStateSequenceNet(nn.Module):
         x = self.run_sequence(x, done)
 
         if targets is not None:
-            x = self.readout(x)
-
             if self.history >= 0:
                 x = x.view(max(1, self.history), T, B, D)
                 targets = targets.view(max(1, self.history), T, B, D)
@@ -545,7 +561,6 @@ class MinigridStateSequenceNet(nn.Module):
         else:
             if self.history >= 0:
                 x = x.view(max(1, self.history), T, B, C)[-1, ...]
-            x = self.readout(x)
             return x
 
 
