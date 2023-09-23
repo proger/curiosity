@@ -155,7 +155,7 @@ def train(flags):
             'scheduler_state_dict': scheduler.state_dict(),
             'flags': vars(flags),
         }, str(path))
-        test(None, random_target_network, predictor_network,
+        evaluate(None, random_target_network, predictor_network,
              env=None, flags=flags, videoroot=path.parent,
              seeds=[3])
 
@@ -196,11 +196,11 @@ def train(flags):
     last_checkpoint = torch.load(checkpointpath)
     random_target_network.load_state_dict(last_checkpoint['random_target_network_state_dict'])
     predictor_network.load_state_dict(last_checkpoint['predictor_network_state_dict'])
-    test(None, random_target_network, predictor_network,
+    evaluate(None, random_target_network, predictor_network,
          env=None, flags=flags, videoroot=Path(checkpointpath).parent, seeds=[3,5,8,13,21,34])
 
 
-def test(
+def evaluate(
     model,
     random_target_network,
     predictor_network,
@@ -214,7 +214,7 @@ def test(
     flags.device = torch.device('cuda')
 
     loader = torch.utils.data.DataLoader(
-        Dataset(flags.test),
+        Dataset(flags.valid),
         batch_size=flags.batch_size,
         shuffle=False,
         num_workers=24,
@@ -236,8 +236,8 @@ def test(
         intrinsic_rewards *= flags.intrinsic_reward_coef
 
         stats = {
-            'test/rnd_loss': flags.rnd_loss_coef * rnd_loss.item(),
-        } | {f'test-stepwise/intrinsic_rewards_{i:02d}': r for i, r in enumerate(intrinsic_rewards[:, 0].cpu().tolist())}
+            'valid/rnd_loss': flags.rnd_loss_coef * rnd_loss.item(),
+        } | {f'valid-stepwise/intrinsic_rewards_{i:02d}': r for i, r in enumerate(intrinsic_rewards[:, 0].cpu().tolist())}
         return stats
 
 
