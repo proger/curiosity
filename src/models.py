@@ -527,9 +527,10 @@ class MinigridStateSequenceNet(nn.Module):
                 # this can be done once up front
                 x = self.readin(x)
 
-            D = targets.shape[-1]
+            T, B, D = targets.shape
         else:
             x = self.embed(inputs)
+            T, B, D = x.shape
             x = self.readin(x)
         # -- [unroll_length x batch_size x hidden_size]
 
@@ -537,7 +538,6 @@ class MinigridStateSequenceNet(nn.Module):
 
         if self.history >= 0:
             # pad unroll_length on the left with self.history-1 zeros
-            T, B, C = x.shape
             x = self.pad_unfold(x)
             done = self.pad_unfold(done)
             if targets is not None:
@@ -567,7 +567,7 @@ class MinigridStateSequenceNet(nn.Module):
             return x, rnd_loss
         else:
             if self.history >= 0:
-                x = x.view(max(1, self.history), T, B, C)[-1, ...]
+                x = x.view(max(1, self.history), T, B, D)[-1, ...]
             return x
 
 
