@@ -7,6 +7,16 @@
 import argparse
 from pathlib import Path
 
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 parser = argparse.ArgumentParser(
     description='PyTorch Scalable Agent',
     formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -102,12 +112,13 @@ parser.add_argument('--rnd_loss_coef', default=0.1, type=float,
 parser.add_argument('--rnd_history', default=16, type=int,
                     help='Number of history frames to use for computing the Recurrent RND prediction. 0 means use all available history, no padding.')
 parser.add_argument('--rnd_autoregressive', choices=['no', 'forward-target', 'forward-target-difference'],
+                    default='forward-target',
                     help='Use past targets as inputs for Recurrent RND.')
 parser.add_argument('--rnd_lstm_width', default=128, type=int,
                     help='Width of the LSTM used for Recurrent RND.')
-parser.add_argument('--rnd_supervise_everything', type=bool,
+parser.add_argument('--rnd_supervise_everything', type=str2bool,
                     help='Supervise all intermediary windowed LSTM outputs with the ground truth.')
-parser.add_argument('--rnd_supervise_early', type=bool,
+parser.add_argument('--rnd_supervise_early', type=str2bool,
                     help='Supervise LSTM inputs with the ground truth (assumes some autoregression).')
 
 # Singleton Environments.
