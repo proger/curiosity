@@ -116,7 +116,7 @@ parser.add_argument('--rnd_autoregressive', choices=['no', 'forward-target', 'fo
                     help='Use past targets as inputs for Recurrent RND.')
 parser.add_argument('--rnd_lstm_width', default=128, type=int,
                     help='Width of the LSTM used for Recurrent RND.')
-parser.add_argument('--rnd_supervise_everything', type=str2bool,
+parser.add_argument('--rnd_supervise_everything', type=str2bool, default=True,
                     help='Supervise all intermediary windowed LSTM outputs with the ground truth.')
 parser.add_argument('--rnd_supervise_early', type=str2bool,
                     help='Supervise LSTM inputs with the ground truth (assumes some autoregression).')

@@ -421,7 +421,7 @@ class MinigridStateSequenceNet(nn.Module):
         if self.autoregressive is None or self.autoregressive == 'no':
             self.readin = nn.Linear(128, self.hidden_size, bias=True)
         elif self.autoregressive in ['forward-target', 'forward-target-difference']:
-            self.readin = nn.Linear(128*2, self.hidden_size, bias=True)
+            self.readin = nn.Linear(128 + 128, self.hidden_size, bias=True)
         else:
             raise ValueError(f'Unknown autoregressive mode: {self.autoregressive}')
 

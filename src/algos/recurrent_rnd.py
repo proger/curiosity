@@ -60,7 +60,7 @@ def learn(actor_model,
                     .reshape(flags.unroll_length, flags.batch_size, 128)
         else:
             random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-            if flags.rnd_autoregressive is not None and flags.rnd_autoregressive != 'no':
+            if flags.rnd_autoregressive != 'no':
                 predicted_embedding, rnd_loss = predictor_network(
                     inputs=batch['partial_obs'][1:].to(device=flags.device),
                     done=done,
@@ -454,7 +454,7 @@ def test(
 
         done = batch['done'][1:].to(device=flags.device)
         random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-        if flags.rnd_autoregressive is not None and flags.rnd_autoregressive != 'no':
+        if flags.rnd_autoregressive != 'no':
             predicted_embedding, _ = predictor_network(
                 inputs=batch['partial_obs'][1:].to(device=flags.device),
                 done=done,
