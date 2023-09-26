@@ -16,6 +16,19 @@ def init(module, weight_init, bias_init, gain=1):
     return module
 
 
+def reinit_conv2d_(network, seed=0):
+    state = torch.get_rng_state()
+    torch.manual_seed(seed)
+    from src.models import init
+    init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                           constant_(x, 0), nn.init.calculate_gain('relu'))
+
+    for name, mod in network.named_modules():
+        if isinstance(mod, nn.Conv2d):
+            init_(mod)
+    torch.set_rng_state(state)
+
+
 class FullObsMinigridPolicyNet(nn.Module):
     def __init__(self, observation_shape, num_actions):
         super(FullObsMinigridPolicyNet, self).__init__()

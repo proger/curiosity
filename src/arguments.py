@@ -120,6 +120,11 @@ parser.add_argument('--rnd_supervise_everything', type=str2bool, default=True,
                     help='Supervise all intermediary windowed LSTM outputs with the ground truth.')
 parser.add_argument('--rnd_supervise_early', type=str2bool,
                     help='Supervise LSTM inputs with the ground truth (assumes some autoregression).')
+parser.add_argument('--rnd_global_weight', default=0.1, type=float,
+                    help='Weight of the global random embedding predictor for Recurrent RND.')
+parser.add_argument('--rnd_local_weight', default=0.9, type=float,
+                    help='Weight of the local random embedding predictor for Recurrent RND.')
+
 
 # Singleton Environments.
 parser.add_argument('--fix_seed', action='store_true',

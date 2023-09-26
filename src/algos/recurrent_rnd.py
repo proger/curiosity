@@ -53,29 +53,36 @@ def learn(actor_model,
     """Performs a learning (optimization) step."""
     with lock:
         done = batch['done'][1:].to(device=flags.device)
-        if flags.use_fullobs_intrinsic:
-            random_embedding = random_target_network(batch, next_state=True)\
-                    .reshape(flags.unroll_length, flags.batch_size, 128)        
-            predicted_embedding = predictor_network(batch, next_state=True)\
-                    .reshape(flags.unroll_length, flags.batch_size, 128)
+        with torch.no_grad():
+            models.reinit_conv2d_(random_target_network, seed=0)
+            global_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+            seed = torch.randint(low=1, high=32768, size=(1,)).item()
+            models.reinit_conv2d_(random_target_network, seed=seed)
+            local_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+
+        if flags.rnd_autoregressive != 'no':
+            global_predicted_embedding, global_rnd_loss = predictor_network(
+                inputs=batch['partial_obs'][1:].to(device=flags.device),
+                done=done,
+                targets=global_random_embedding,
+            )
+
+            _local_predicted_embedding, local_rnd_loss = predictor_network(
+                inputs=batch['partial_obs'][1:].to(device=flags.device),
+                done=done,
+                targets=local_random_embedding,
+            )
+            rnd_loss = flags.rnd_global_weight * global_rnd_loss + flags.rnd_local_weight * local_rnd_loss
         else:
-            random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-            if flags.rnd_autoregressive != 'no':
-                predicted_embedding, rnd_loss = predictor_network(
-                    inputs=batch['partial_obs'][1:].to(device=flags.device),
-                    done=done,
-                    targets=random_embedding.detach(),
-                )
-            else:
-                predicted_embedding = predictor_network(
-                    inputs=batch['partial_obs'][1:].to(device=flags.device),
-                    done=done,
-                )
+            global_predicted_embedding = predictor_network(
+                inputs=batch['partial_obs'][1:].to(device=flags.device),
+                done=done,
+            )
 
-                # norm over hidden (2), mean over batch (1), sum over time (0)
-                rnd_loss = (torch.norm(predicted_embedding - random_embedding.detach(), dim=2, p=2)).mean(dim=1).sum()
+            # norm over hidden (2), mean over batch (1), sum over time (0)
+            rnd_loss = (torch.norm(global_predicted_embedding - global_random_embedding.detach(), dim=2, p=2)).mean(dim=1).sum()
 
-        intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
+        intrinsic_rewards = torch.norm(global_predicted_embedding.detach() - global_random_embedding.detach(), dim=2, p=2)
         intrinsic_rewards *= flags.intrinsic_reward_coef
 
         rnd_loss = flags.rnd_loss_coef * rnd_loss
@@ -453,6 +460,7 @@ def test(
             initial_agent_state_buffers, flags, timings)
 
         done = batch['done'][1:].to(device=flags.device)
+        models.reinit_conv2d_(random_target_network, seed=16384)
         random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
         if flags.rnd_autoregressive != 'no':
             predicted_embedding, _ = predictor_network(

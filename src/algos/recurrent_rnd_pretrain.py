@@ -38,6 +38,12 @@ class Dataset(torch.utils.data.Dataset):
         data = {k: data[k][:, index, ...] for k in ['partial_obs', 'done']}
         return data
 
+def truncate_embedding(x):
+    if isinstance(x, tuple):
+        return x[0][..., :], x[1] # predictor_network returns (predicted_embedding, rnd_loss)
+    else:
+        return x[..., :]
+
 
 def learn(actor_model,
           model: models.MinigridPolicyNet,
@@ -52,12 +58,16 @@ def learn(actor_model,
           frames=None,
           lock=threading.Lock()):
     done = batch['done'][1:].to(device=flags.device)
-    random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-    predicted_embedding, rnd_loss = predictor_network(
+
+    seed = torch.randint(low=4, high=2**14+4, size=(1,)).item()
+    models.reinit_conv2d_(random_target_network, seed=seed)
+
+    random_embedding = truncate_embedding(random_target_network(batch['partial_obs'][1:].to(device=flags.device)))
+    predicted_embedding, rnd_loss = truncate_embedding(predictor_network(
         inputs=batch['partial_obs'][1:].to(device=flags.device),
         done=done,
         targets=random_embedding.detach(),
-    )
+    ))
 
     intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
     intrinsic_rewards *= flags.intrinsic_reward_coef
@@ -183,7 +193,7 @@ def train(flags):
 
         if frames % (T * B * 100) == 0:
             fps = (frames - start_frames) / (timer() - start_time)
-            log.info('After %i frames: loss %f @ %.1f fps. LR %.3f.', \
+            log.info('After %i frames: loss %f @ %.1f fps. LR %.6f.', \
                     frames, stats['rnd_loss'], fps, scheduler.get_last_lr()[0])
             start_frames = frames
             start_time = timer()
@@ -200,6 +210,8 @@ def train(flags):
          env=None, flags=flags, videoroot=Path(checkpointpath).parent, seeds=[3,5,8,13,21,34])
 
 
+
+@torch.no_grad()
 def evaluate(
     model,
     random_target_network,
@@ -222,15 +234,17 @@ def evaluate(
         drop_last=False,
     )
 
+    models.reinit_conv2d_(random_target_network, seed=seeds[0])
+
     for batch in loader:
         done = batch['done'][1:].to(device=flags.device)
-        random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+        random_embedding = truncate_embedding(random_target_network(batch['partial_obs'][1:].to(device=flags.device)))
 
-        predicted_embedding, rnd_loss = predictor_network(
+        predicted_embedding, rnd_loss = truncate_embedding(predictor_network(
             inputs=batch['partial_obs'][1:].to(device=flags.device),
             done=done,
             targets=random_embedding.detach(),
-        )
+        ))
 
         intrinsic_rewards = torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
         intrinsic_rewards *= flags.intrinsic_reward_coef
@@ -240,8 +254,6 @@ def evaluate(
         } | {f'valid-stepwise/intrinsic_rewards_{i:02d}': r for i, r in enumerate(intrinsic_rewards[:, 0].cpu().tolist())}
         if wandb.run is not None:
             wandb.log(stats)
-        return stats
-
 
 
 if __name__ == '__main__':
