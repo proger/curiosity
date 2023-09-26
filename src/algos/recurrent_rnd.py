@@ -41,6 +41,7 @@ FullObsMinigridStateEmbeddingNet = models.FullObsMinigridStateEmbeddingNet
 def learn(actor_model,
           model: models.MinigridPolicyNet,
           random_target_network,
+          grouped_random_target_network,
           predictor_network,
           batch,
           initial_agent_state, 
@@ -54,11 +55,10 @@ def learn(actor_model,
     with lock:
         done = batch['done'][1:].to(device=flags.device)
         with torch.no_grad():
-            models.reinit_conv2d_(random_target_network, seed=0)
             global_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-            seed = torch.randint(low=1, high=32768, size=(1,)).item()
-            models.reinit_conv2d_(random_target_network, seed=seed)
-            local_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+            seed = torch.randint(low=20, high=32788, size=(1,)).item()
+            models.reinit_conv2d_(grouped_random_target_network, seed=seed)
+            local_random_embedding = grouped_random_target_network(batch['partial_obs'][1:].to(device=flags.device))
 
         if flags.rnd_autoregressive != 'no':
             global_predicted_embedding, global_rnd_loss = predictor_network(
@@ -67,12 +67,12 @@ def learn(actor_model,
                 targets=global_random_embedding,
             )
 
-            _local_predicted_embedding, local_rnd_loss = predictor_network(
+            local_predicted_embedding, local_rnd_loss = predictor_network(
                 inputs=batch['partial_obs'][1:].to(device=flags.device),
                 done=done,
                 targets=local_random_embedding,
             )
-            rnd_loss = flags.rnd_global_weight * global_rnd_loss + flags.rnd_local_weight * local_rnd_loss
+            rnd_loss = flags.rnd_global_loss_weight * global_rnd_loss + (1-flags.rnd_global_loss_weight) * local_rnd_loss
         else:
             global_predicted_embedding = predictor_network(
                 inputs=batch['partial_obs'][1:].to(device=flags.device),
@@ -82,7 +82,9 @@ def learn(actor_model,
             # norm over hidden (2), mean over batch (1), sum over time (0)
             rnd_loss = (torch.norm(global_predicted_embedding - global_random_embedding.detach(), dim=2, p=2)).mean(dim=1).sum()
 
-        intrinsic_rewards = torch.norm(global_predicted_embedding.detach() - global_random_embedding.detach(), dim=2, p=2)
+        global_intrinsic_rewards = torch.norm(global_predicted_embedding.detach() - global_random_embedding.detach(), dim=2, p=2)
+        local_intrinsic_rewards = torch.norm(local_predicted_embedding.detach() - local_random_embedding.detach(), dim=2, p=2)
+        intrinsic_rewards = flags.rnd_global_reward_weight * global_intrinsic_rewards + flags.rnd_local_reward_weight * local_intrinsic_rewards
         intrinsic_rewards *= flags.intrinsic_reward_coef
 
         rnd_loss = flags.rnd_loss_coef * rnd_loss
@@ -148,6 +150,8 @@ def learn(actor_model,
             'rnd_loss': rnd_loss.item(),
             'mean_rewards': torch.mean(rewards).item(),
             'mean_intrinsic_rewards': torch.mean(intrinsic_rewards).item(),
+            'mean_global_intrinsic_rewards': flags.rnd_global_reward_weight * torch.mean(global_intrinsic_rewards).item(),
+            'mean_local_intrinsic_rewards': flags.rnd_local_reward_weight * torch.mean(local_intrinsic_rewards).item(),
             'mean_total_rewards': torch.mean(total_rewards).item(),
             'grad_norm_policy': grad_norm_policy.item(),
             'grad_norm_rnd_predictor': grad_norm_rnd_predictor.item(),
@@ -203,6 +207,12 @@ def train(flags):
                 env.observation_space.shape,
                 final_activation=False,
             ).to(device=flags.device)
+            models.reinit_conv2d_(random_target_network, seed=flags.rnd_seed)
+            grouped_random_target_network = models.GroupedStateEmbeddingNet(
+                flags.batch_size,
+                env.observation_space.shape,
+                final_activation=False,
+            ).to(device=flags.device)
             predictor_network = models.MinigridStateSequenceNet(
                 env.observation_space.shape,
                 history=flags.rnd_history,
@@ -220,10 +230,12 @@ def train(flags):
     wandb.config.params_policy = sum(p.numel() for p in model.parameters() if p.requires_grad)
     wandb.config.params_rnd_predictor = sum(p.numel() for p in predictor_network.parameters() if p.requires_grad)
     wandb.config.params_rnd_target = sum(p.numel() for p in random_target_network.parameters() if p.requires_grad)
-    log.info('Number of parameters: policy %d, rnd_predictor %d, rnd_target %d',
+    wandb.config.params_grouped_rnd_target = sum(p.numel() for p in grouped_random_target_network.parameters() if p.requires_grad)
+    log.info('Number of parameters: policy %d, rnd_predictor %d, rnd_target %d, grouped_rnd_target %d',
                 wandb.config.params_policy,
                 wandb.config.params_rnd_predictor,
-                wandb.config.params_rnd_target)
+                wandb.config.params_rnd_target,
+                wandb.config.params_grouped_rnd_target)
 
     buffers = create_buffers(env.observation_space.shape, model.num_actions, flags)
     
@@ -305,7 +317,7 @@ def train(flags):
                 initial_agent_state_buffers, flags, timings)
             if flags.megabuffer:
                 megabuffer = cat_buffers(megabuffer, batch)
-            stats = learn(model, learner_model, random_target_network, predictor_network,
+            stats = learn(model, learner_model, random_target_network, grouped_random_target_network, predictor_network,
                           batch, agent_state, optimizer, predictor_optimizer, scheduler, 
                           flags, frames=frames)
             timings.time('learn')
@@ -345,6 +357,7 @@ def train(flags):
         else:
             path = Path(checkpointpath)
         log.info('Saving checkpoint to %s', str(path))
+        models.reinit_conv2d_(random_target_network, seed=0)
         torch.save({
             'model_state_dict': model.state_dict(),
             'random_target_network_state_dict': random_target_network.state_dict(),

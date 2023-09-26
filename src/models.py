@@ -385,6 +385,36 @@ def make_feat_extract(in_channels, out_channels, final_activation=True):
             init_(nn.Conv2d(in_channels=32, out_channels=out_channels, kernel_size=(3, 3), stride=2, padding=1)),
         )
 
+
+class GroupedStateEmbeddingNet(nn.Module):
+    def __init__(self, batch_size, observation_shape, final_activation=False):
+        super().__init__()
+        assert final_activation == False
+
+        self.observation_shape = observation_shape
+        in_channels, out_channels = observation_shape[2], 128
+        self.in_channels, self.out_channels = in_channels, out_channels
+
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                               constant_(x, 0), nn.init.calculate_gain('relu'))
+
+        N = batch_size
+        self.conv = nn.Sequential(
+            init_(nn.Conv2d(in_channels=N*in_channels, out_channels=N*32, groups=N, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=N*32, out_channels=N*32, groups=N, kernel_size=(3, 3), stride=2, padding=1)),
+            nn.ELU(),
+            init_(nn.Conv2d(in_channels=N*32, out_channels=N*out_channels, groups=N, kernel_size=(3, 3), stride=2, padding=1)),
+        )
+
+    def forward(self, partial_obs):
+        T, N, H, W, C = partial_obs.shape
+
+        x = partial_obs.float() #/ 255.0
+        x = x.permute(0, 1, 4, 2, 3) # T, N, C, H, W
+        return self.conv(x.reshape(T, N*C, H, W)).reshape(T, N, self.out_channels).contiguous()
+
+
 class MinigridStateEmbeddingNet(nn.Module):
     def __init__(self, observation_shape, final_activation=True):
         super(MinigridStateEmbeddingNet, self).__init__()
