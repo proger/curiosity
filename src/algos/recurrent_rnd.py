@@ -38,6 +38,48 @@ MarioDoomStateEmbeddingNet = models.MarioDoomStateEmbeddingNet
 FullObsMinigridPolicyNet = models.FullObsMinigridPolicyNet
 FullObsMinigridStateEmbeddingNet = models.FullObsMinigridStateEmbeddingNet
 
+
+def meta_predictor_step(
+    *,
+    random_target_network,
+    grouped_random_target_network,
+    predictor_network,
+    batch,
+    done,
+    flags,
+    ignore_global=False
+):
+    with torch.no_grad():
+        models.reinit_conv2d_(random_target_network, seed=flags.rnd_seed)
+        global_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+
+        seed = torch.randint(low=20, high=32788, size=(1,)).item()
+        models.reinit_conv2d_(grouped_random_target_network, seed=seed)
+        local_random_embedding = grouped_random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+
+    global_predicted_embedding, global_rnd_loss = predictor_network(
+        inputs=batch['partial_obs'][1:].to(device=flags.device),
+        done=done,
+        targets=global_random_embedding,
+    )
+
+    local_predicted_embedding, local_rnd_loss = predictor_network(
+        inputs=batch['partial_obs'][1:].to(device=flags.device),
+        done=done,
+        targets=local_random_embedding,
+    )
+    if ignore_global:
+        rnd_loss = (1-flags.rnd_global_loss_weight) * local_rnd_loss
+    else:
+        rnd_loss = flags.rnd_global_loss_weight * global_rnd_loss + (1-flags.rnd_global_loss_weight) * local_rnd_loss
+
+    local_intrinsic_rewards = torch.norm(local_predicted_embedding.detach() - local_random_embedding.detach(), dim=2, p=2)
+    global_intrinsic_rewards = torch.norm(global_predicted_embedding.detach() - global_random_embedding.detach(), dim=2, p=2)
+    intrinsic_rewards = flags.rnd_global_reward_weight * global_intrinsic_rewards + flags.rnd_local_reward_weight * local_intrinsic_rewards
+    intrinsic_rewards *= flags.intrinsic_reward_coef
+    return intrinsic_rewards, rnd_loss
+
+
 def learn(actor_model,
           model: models.MinigridPolicyNet,
           random_target_network,
@@ -54,27 +96,20 @@ def learn(actor_model,
     """Performs a learning (optimization) step."""
     with lock:
         done = batch['done'][1:].to(device=flags.device)
-        with torch.no_grad():
-            models.reinit_conv2d_(random_target_network, seed=flags.rnd_seed)
-            global_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-            seed = torch.randint(low=20, high=32788, size=(1,)).item()
-            models.reinit_conv2d_(grouped_random_target_network, seed=seed)
-            local_random_embedding = grouped_random_target_network(batch['partial_obs'][1:].to(device=flags.device))
-
         if flags.rnd_autoregressive != 'no':
-            global_predicted_embedding, global_rnd_loss = predictor_network(
-                inputs=batch['partial_obs'][1:].to(device=flags.device),
+            intrinsic_rewards, rnd_loss = meta_predictor_step(
+                random_target_network=random_target_network,
+                grouped_random_target_network=grouped_random_target_network,
+                predictor_network=predictor_network,
+                batch=batch,
                 done=done,
-                targets=global_random_embedding,
+                flags=flags,
             )
-
-            local_predicted_embedding, local_rnd_loss = predictor_network(
-                inputs=batch['partial_obs'][1:].to(device=flags.device),
-                done=done,
-                targets=local_random_embedding,
-            )
-            rnd_loss = flags.rnd_global_loss_weight * global_rnd_loss + (1-flags.rnd_global_loss_weight) * local_rnd_loss
         else:
+            with torch.no_grad():
+                models.reinit_conv2d_(random_target_network, seed=flags.rnd_seed)
+                global_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+
             global_predicted_embedding = predictor_network(
                 inputs=batch['partial_obs'][1:].to(device=flags.device),
                 done=done,
@@ -83,10 +118,7 @@ def learn(actor_model,
             # norm over hidden (2), mean over batch (1), sum over time (0)
             rnd_loss = (torch.norm(global_predicted_embedding - global_random_embedding.detach(), dim=2, p=2)).mean(dim=1).sum()
 
-        global_intrinsic_rewards = torch.norm(global_predicted_embedding.detach() - global_random_embedding.detach(), dim=2, p=2)
-        local_intrinsic_rewards = torch.norm(local_predicted_embedding.detach() - local_random_embedding.detach(), dim=2, p=2)
-        intrinsic_rewards = flags.rnd_global_reward_weight * global_intrinsic_rewards + flags.rnd_local_reward_weight * local_intrinsic_rewards
-        intrinsic_rewards *= flags.intrinsic_reward_coef
+            intrinsic_rewards = flags.intrinsic_reward_coef * torch.norm(global_predicted_embedding.detach() - global_random_embedding.detach(), dim=2, p=2)
 
         rnd_loss = flags.rnd_loss_coef * rnd_loss
 
@@ -94,6 +126,7 @@ def learn(actor_model,
 
         bootstrap_value = learner_outputs['baseline'][-1]
 
+        old_batch = batch
         batch = {key: tensor[1:] for key, tensor in batch.items()}
         learner_outputs = {
             key: tensor[:-1]
@@ -141,6 +174,22 @@ def learn(actor_model,
         predictor_optimizer.step()
 
         actor_model.load_state_dict(model.state_dict())
+
+        for _ in range(flags.rnd_extra_steps):
+            _, rnd_loss = meta_predictor_step(
+                random_target_network=random_target_network,
+                grouped_random_target_network=grouped_random_target_network,
+                predictor_network=predictor_network,
+                batch=old_batch,
+                done=done,
+                flags=flags,
+                ignore_global=True
+            )
+            predictor_optimizer.zero_grad()
+            rnd_loss.backward()
+            grad_norm_rnd_predictor = nn.utils.clip_grad_norm_(predictor_network.parameters(), flags.max_grad_norm)
+            predictor_optimizer.step()
+
 
         stats = {
             'mean_episode_return': torch.mean(episode_returns).item(),
