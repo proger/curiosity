@@ -55,6 +55,7 @@ def learn(actor_model,
     with lock:
         done = batch['done'][1:].to(device=flags.device)
         with torch.no_grad():
+            models.reinit_conv2d_(random_target_network, seed=flags.rnd_seed)
             global_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
             seed = torch.randint(low=20, high=32788, size=(1,)).item()
             models.reinit_conv2d_(grouped_random_target_network, seed=seed)
@@ -357,7 +358,6 @@ def train(flags):
         else:
             path = Path(checkpointpath)
         log.info('Saving checkpoint to %s', str(path))
-        models.reinit_conv2d_(random_target_network, seed=0)
         torch.save({
             'model_state_dict': model.state_dict(),
             'random_target_network_state_dict': random_target_network.state_dict(),
@@ -473,7 +473,7 @@ def test(
             initial_agent_state_buffers, flags, timings)
 
         done = batch['done'][1:].to(device=flags.device)
-        models.reinit_conv2d_(random_target_network, seed=16384)
+        #models.reinit_conv2d_(random_target_network, seed=16384)
         random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
         if flags.rnd_autoregressive != 'no':
             predicted_embedding, _ = predictor_network(
