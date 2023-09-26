@@ -185,8 +185,9 @@ def learn(actor_model,
                 flags=flags,
                 ignore_global=True
             )
+            rnd_loss = flags.rnd_loss_coef * rnd_loss
             predictor_optimizer.zero_grad()
-            (flags.rnd_loss_coef * rnd_loss).backward()
+            rnd_loss.backward()
             grad_norm_rnd_predictor = nn.utils.clip_grad_norm_(predictor_network.parameters(), flags.max_grad_norm)
             predictor_optimizer.step()
 
