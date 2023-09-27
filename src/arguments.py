@@ -128,6 +128,8 @@ parser.add_argument('--rnd_global_reward_weight', default=0.5, type=float,
                     help='Weight of the local random embedding predictor for Recurrent RND.')
 parser.add_argument('--rnd_seed', default=0, type=int,
                     help='Seed for the RND network.')
+parser.add_argument('--rnd_meta_seed', default=1516516984916, type=int,
+                    help='Seed for the Meta RND task randomizer.')
 parser.add_argument('--rnd_extra_steps', default=0, type=int,
                     help='Extra steps with more random inits of the RND network.')
 

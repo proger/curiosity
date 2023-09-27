@@ -47,13 +47,14 @@ def meta_predictor_step(
     batch,
     done,
     flags,
-    ignore_global=False
+    generator,
+    ignore_global=False,
 ):
     with torch.no_grad():
         models.reinit_conv2d_(random_target_network, seed=flags.rnd_seed)
         global_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
 
-        seed = torch.randint(low=20, high=32788, size=(1,)).item()
+        seed = torch.randint(low=20, high=32788, size=(1,), generator=generator).item()
         models.reinit_conv2d_(grouped_random_target_network, seed=seed)
         local_random_embedding = grouped_random_target_network(batch['partial_obs'][1:].to(device=flags.device))
 
@@ -91,8 +92,10 @@ def learn(actor_model,
           predictor_optimizer,
           scheduler,
           flags,
+          generator=None,
           frames=None,
-          lock=threading.Lock()):
+          lock=threading.Lock(),
+          ):
     """Performs a learning (optimization) step."""
     with lock:
         done = batch['done'][1:].to(device=flags.device)
@@ -104,6 +107,7 @@ def learn(actor_model,
                 batch=batch,
                 done=done,
                 flags=flags,
+                generator=generator,
             )
         else:
             with torch.no_grad():
@@ -183,7 +187,8 @@ def learn(actor_model,
                 batch=old_batch,
                 done=done,
                 flags=flags,
-                ignore_global=True
+                generator=generator,
+                ignore_global=False
             )
             rnd_loss = flags.rnd_loss_coef * rnd_loss
             predictor_optimizer.zero_grad()
@@ -356,6 +361,8 @@ def train(flags):
 
     frames, stats = 0, {}
 
+    meta_generator = torch.Generator().manual_seed(flags.rnd_meta_seed)
+
 
     def batch_and_learn(i, lock=threading.Lock()):
         """Thread target for the learning process."""
@@ -370,7 +377,7 @@ def train(flags):
                 megabuffer = cat_buffers(megabuffer, batch)
             stats = learn(model, learner_model, random_target_network, grouped_random_target_network, predictor_network,
                           batch, agent_state, optimizer, predictor_optimizer, scheduler, 
-                          flags, frames=frames)
+                          flags, generator=meta_generator, frames=frames)
             timings.time('learn')
             with lock:
                 to_log = dict(frames=frames)
