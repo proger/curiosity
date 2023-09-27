@@ -277,6 +277,7 @@ def train(flags):
                 supervise_everything=flags.rnd_supervise_everything,
                 supervise_early=flags.rnd_supervise_early,
             ).to(device=flags.device)
+
     else:
         raise NotImplementedError('Only MiniGrid environments are supported at the moment.')
         model = MarioDoomPolicyNet(env.observation_space.shape, env.action_space.n)
@@ -353,6 +354,12 @@ def train(flags):
             eps=flags.epsilon,
             alpha=flags.alpha,
             weight_decay=flags.rnd_weight_decay)
+
+    if flags.rnd_init is not None:
+        log.info('Loading RND predictor from %s', flags.rnd_init)
+        init_checkpoint = torch.load(flags.rnd_init, map_location=flags.device)
+        predictor_network.load_state_dict(init_checkpoint['predictor_network_state_dict'])
+        # load optimizer state?
 
     def lr_lambda(epoch):
         return 1 - min(epoch * T * B, flags.total_frames) / flags.total_frames

@@ -132,7 +132,7 @@ parser.add_argument('--rnd_meta_seed', default=1516516984916, type=int,
                     help='Seed for the Meta RND task randomizer.')
 parser.add_argument('--rnd_extra_steps', default=0, type=int,
                     help='Extra steps with more random inits of the RND network.')
-
+parser.add_argument('--rnd_init', type=str, help='Initialize the RND network with this checkpoint for training.')
 
 # Singleton Environments.
 parser.add_argument('--fix_seed', action='store_true',
