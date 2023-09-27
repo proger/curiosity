@@ -116,7 +116,7 @@ def get_batch(free_queue: mp.SimpleQueue,
 def create_buffers(obs_shape, num_actions, flags) -> Buffers:
     T = flags.unroll_length
     specs = dict(
-        frame=dict(size=(T + 1, *obs_shape), dtype=torch.uint32),
+        frame=dict(size=(T + 1, *obs_shape), dtype=torch.int32),
         reward=dict(size=(T + 1,), dtype=torch.float32),
         done=dict(size=(T + 1,), dtype=torch.bool),
         episode_return=dict(size=(T + 1,), dtype=torch.float32),
@@ -128,7 +128,7 @@ def create_buffers(obs_shape, num_actions, flags) -> Buffers:
         episode_win=dict(size=(T + 1,), dtype=torch.int32),
         carried_obj=dict(size=(T + 1,), dtype=torch.int32),
         carried_col=dict(size=(T + 1,), dtype=torch.int32),
-        partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.uint32),
+        partial_obs=dict(size=(T + 1, 7, 7, 3), dtype=torch.int32),
         episode_state_count=dict(size=(T + 1,), dtype=torch.float32),
         train_state_count=dict(size=(T + 1,), dtype=torch.float32),
     )
