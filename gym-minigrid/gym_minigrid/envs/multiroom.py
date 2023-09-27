@@ -21,7 +21,8 @@ class MultiRoomEnv(MiniGridEnv):
     def __init__(self,
         minNumRooms,
         maxNumRooms,
-        maxRoomSize=10
+        maxRoomSize=10,
+        coloredWalls=False
     ):
         assert minNumRooms > 0
         assert maxNumRooms >= minNumRooms
@@ -32,6 +33,7 @@ class MultiRoomEnv(MiniGridEnv):
         self.maxRoomSize = maxRoomSize
 
         self.rooms = []
+        self.coloredWalls = coloredWalls
 
         super(MultiRoomEnv, self).__init__(
             grid_size=25,
@@ -71,42 +73,70 @@ class MultiRoomEnv(MiniGridEnv):
 
         # Create the grid
         self.grid = Grid(width, height)
-        wall = Wall()
 
-        prevDoorColor = None
-
-        # For each room
-        for idx, room in enumerate(roomList):
+        def make_walls(room, color='grey'):
+            wall = Wall(color=color)
 
             topX, topY = room.top
             sizeX, sizeY = room.size
 
+            # avoid painting over existing doors
+            def is_wall_or_none(thing):
+                return thing is None or isinstance(thing, Wall)
+
             # Draw the top and bottom walls
             for i in range(0, sizeX):
-                self.grid.set(topX + i, topY, wall)
-                self.grid.set(topX + i, topY + sizeY - 1, wall)
+                if is_wall_or_none(self.grid.get(topX + i, topY)):
+                    self.grid.set(topX + i, topY, wall)
+                if is_wall_or_none(self.grid.get(topX + i, topY + sizeY - 1)):
+                    self.grid.set(topX + i, topY + sizeY - 1, wall)
 
             # Draw the left and right walls
             for j in range(0, sizeY):
-                self.grid.set(topX, topY + j, wall)
-                self.grid.set(topX + sizeX - 1, topY + j, wall)
+                if is_wall_or_none(self.grid.get(topX, topY + j)):
+                    self.grid.set(topX, topY + j, wall)
+                if is_wall_or_none(self.grid.get(topX + sizeX - 1, topY + j)):
+                    self.grid.set(topX + sizeX - 1, topY + j, wall)
+
+
+        prevDoorColor = None
+
+        if self.coloredWalls:
+            # paint them backwards new colors stay "inside"
+            roomOrder = roomList[::-1]
+            firstRoom = len(roomList) - 1
+        else:
+            roomOrder = roomList
+            firstRoom = 0
+
+        # For each room
+        for idx, room in enumerate(roomOrder):
 
             # If this isn't the first room, place the entry door
-            if idx > 0:
-                # Pick a door color different from the previous one
-                doorColors = set(COLOR_NAMES)
-                if prevDoorColor:
-                    doorColors.remove(prevDoorColor)
-                # Note: the use of sorting here guarantees determinism,
-                # This is needed because Python's set is not deterministic
-                doorColor = self._rand_elem(sorted(doorColors))
+            if idx != firstRoom:
+                if self.coloredWalls:
+                    doorColor = self._rand_int(6, 2**15-1+6) # we need at least L colors
+
+                    make_walls(room, color=doorColor)
+                else:
+                    # Pick a door color different from the previous one
+                    doorColors = set(COLOR_NAMES)
+                    if prevDoorColor:
+                        doorColors.remove(prevDoorColor)
+                    # Note: the use of sorting here guarantees determinism,
+                    # This is needed because Python's set is not deterministic
+                    doorColor = self._rand_elem(sorted(doorColors))
+
+                    make_walls(room)
 
                 entryDoor = Door(doorColor)
                 self.grid.set(*room.entryDoorPos, entryDoor)
                 prevDoorColor = doorColor
 
-                prevRoom = roomList[idx-1]
+                prevRoom = roomOrder[idx-1]
                 prevRoom.exitDoorPos = room.entryDoorPos
+            else:
+                make_walls(room)
 
         # Randomize the starting agent position and direction
         self.place_agent(roomList[0].top, roomList[0].size)
@@ -267,6 +297,15 @@ class MultiRoomEnvN7S4(MultiRoomEnv):
             maxRoomSize=4
         )
 
+class MultiRoomEnvN7S4Colorful(MultiRoomEnv):
+    def __init__(self):
+        super().__init__(
+            minNumRooms=7,
+            maxNumRooms=7,
+            maxRoomSize=4,
+            coloredWalls=True
+        )
+
 class MultiRoomEnvN7S8(MultiRoomEnv):
     def __init__(self):
         super().__init__(
@@ -317,6 +356,11 @@ register(
 register(
     id='MiniGrid-MultiRoom-N7-S4-v0',
     entry_point='gym_minigrid.envs:MultiRoomEnvN7S4'
+)
+
+register(
+    id='MiniGrid-MultiRoom-N7-S4-Colorful-v0',
+    entry_point='gym_minigrid.envs:MultiRoomEnvN7S4Colorful'
 )
 
 register(

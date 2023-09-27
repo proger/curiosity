@@ -20,7 +20,18 @@ COLORS = {
     'grey'  : np.array([100, 100, 100])
 }
 
-COLOR_NAMES = sorted(list(COLORS.keys()))
+# make a dictionary of all colors where the number is a 24-bit key of the color
+COLORS_INT = {
+    color_number: np.array([color_number >> 16,
+                            (color_number >> 8) & 0xFF,
+                            color_number & 0xFF])
+    for color_number in range(2**24)
+}
+
+# Update the COLORS dictionary with the new color dictionary
+COLORS.update(COLORS_INT)
+
+COLOR_NAMES = sorted(['red', 'green', 'blue', 'purple', 'yellow', 'grey'])
 
 # Used to map colors to integers
 COLOR_TO_IDX = {
@@ -31,6 +42,12 @@ COLOR_TO_IDX = {
     'yellow': 4,
     'grey'  : 5
 }
+
+# Add COLORS_INT colors to COLOR_TO_IDX
+COLOR_TO_IDX.update({
+    color_number: 6 + color_number
+    for color_number in range(2**24)
+})
 
 IDX_TO_COLOR = dict(zip(COLOR_TO_IDX.values(), COLOR_TO_IDX.keys()))
 
