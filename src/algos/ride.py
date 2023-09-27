@@ -71,14 +71,8 @@ def learn(actor_model,
             next_state_emb = state_embedding_model(batch, next_state=True)\
                     .reshape(flags.unroll_length, flags.batch_size, 128)
         else:
-            if flags.trajectory_embed:
-                #print("track input size for tau: ", batch['partial_obs'][:-1].to(device=flags.device).shape)
-                state_emb = state_embedding_model(batch['partial_trajectory'][:-1].to(device=flags.device))
-                next_state_emb = state_embedding_model(batch['partial_trajectory'][1:].to(device=flags.device))
-            else:
-                #print("track input size: ", batch['partial_obs'][:-1].to(device=flags.device).shape)
-                state_emb = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
-                next_state_emb = state_embedding_model(batch['partial_obs'][1:].to(device=flags.device))
+            state_emb = state_embedding_model(batch['partial_obs'][:-1].to(device=flags.device))
+            next_state_emb = state_embedding_model(batch['partial_obs'][1:].to(device=flags.device))
         
         pred_next_state_emb = forward_dynamics_model(
             state_emb, batch['action'][1:].to(device=flags.device))
@@ -213,12 +207,8 @@ def train(flags):
             state_embedding_model = FullObsMinigridStateEmbeddingNet(env.observation_space.shape)\
                 .to(device=flags.device) 
         else:
-            if(flags.trajectory_embed):
-                state_embedding_model = MinigridTrajectoryEmbeddingNet(env.observation_space.shape) \
-                    .to(device=flags.device)
-            else:
-                state_embedding_model = MinigridStateEmbeddingNet(env.observation_space.shape)\
-                    .to(device=flags.device)
+            state_embedding_model = MinigridStateEmbeddingNet(env.observation_space.shape)\
+                .to(device=flags.device)
         forward_dynamics_model = MinigridForwardDynamicsNet(env.action_space.n)\
             .to(device=flags.device) 
         inverse_dynamics_model = MinigridInverseDynamicsNet(env.action_space.n)\
