@@ -244,9 +244,9 @@ class FullyObsWrapper(gym.core.ObservationWrapper):
 
         self.observation_space.spaces["image"] = spaces.Box(
             low=0,
-            high=255,
+            high=2**24+5,
             shape=(self.env.width, self.env.height, 3),  # number of cells
-            dtype='uint8'
+            dtype='int32'
         )
 
     def observation(self, obs):
