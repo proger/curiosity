@@ -451,12 +451,14 @@ class MinigridStateSequenceNet(nn.Module):
         hidden_size=128,
         supervise_everything=False,
         supervise_early=False,
+        supervise_residual=False,
     ):
         super().__init__()
         self.autoregressive = autoregressive
         self.history = history
         self.supervise_everything = supervise_everything
         self.supervise_early = supervise_early
+        self.supervise_residual = supervise_residual
 
         self.embed = MinigridStateEmbeddingNet(observation_shape, final_activation=True)
         self.hidden_size = hidden_size
@@ -593,8 +595,14 @@ class MinigridStateSequenceNet(nn.Module):
                 x = x.view(max(1, self.history), T, B, D)
                 targets = targets.view(max(1, self.history), T, B, D)
 
+            if self.supervise_residual:
+                residual = x + shifted_targets - targets
+            else:
+                residual = x - targets
+
+            if self.history >= 0:
                 # norm over hidden, mean over batch, sum over time (0)
-                rnd_loss1 = (torch.norm(x - targets, dim=-1, p=2)).mean(dim=-1).sum(dim=1)
+                rnd_loss1 = (torch.norm(residual, dim=-1, p=2)).mean(dim=-1).sum(dim=1)
 
                 if self.supervise_everything:
                     # supervise all intermediate targets
@@ -605,7 +613,7 @@ class MinigridStateSequenceNet(nn.Module):
                 x = x[-1, ...]
             else:
                 # norm over hidden, mean over batch (1), sum over time (0)
-                rnd_loss += (torch.norm(x - targets, dim=2, p=2)).mean(dim=-1).sum()
+                rnd_loss += (torch.norm(residual, dim=2, p=2)).mean(dim=-1).sum()
 
             return x, rnd_loss
         else:
