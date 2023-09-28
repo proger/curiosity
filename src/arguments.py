@@ -122,6 +122,8 @@ parser.add_argument('--rnd_supervise_early', type=str2bool,
                     help='Supervise LSTM inputs with the ground truth (assumes some autoregression).')
 parser.add_argument('--rnd_supervise_residual', type=str2bool,
                     help='Treat LSTM outputs as differences to the target (assumes some autoregression).')
+parser.add_argument('--rnd_concat', type=str2bool,
+                    help='Concat global and local outputs together. Ignores loss weighting.')
 parser.add_argument('--rnd_global_loss_weight', default=0.1, type=float,
                     help='Weight (0..1) of the global random embedding predictor for Recurrent RND.')
 parser.add_argument('--rnd_local_reward_weight', default=0.5, type=float,

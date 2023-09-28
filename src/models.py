@@ -449,6 +449,8 @@ class MinigridStateSequenceNet(nn.Module):
         history=16, # how many frames to use as context. if <= 0, use all frames
         autoregressive=None,
         hidden_size=128,
+        ar_size=128, # size of the output and autoregressive part of the input
+        q_size=128, # size of the query (input)
         supervise_everything=False,
         supervise_early=False,
         supervise_residual=False,
@@ -464,14 +466,14 @@ class MinigridStateSequenceNet(nn.Module):
         self.hidden_size = hidden_size
 
         if self.autoregressive is None or self.autoregressive == 'no':
-            self.readin = nn.Linear(128, self.hidden_size, bias=True)
+            self.readin = nn.Linear(q_size, self.hidden_size, bias=True)
         elif self.autoregressive in ['forward-target', 'forward-target-difference']:
-            self.readin = nn.Linear(128 + 128, self.hidden_size, bias=True)
+            self.readin = nn.Linear(q_size + ar_size, self.hidden_size, bias=True)
         else:
             raise ValueError(f'Unknown autoregressive mode: {self.autoregressive}')
 
         self.core = nn.LSTMCell(self.hidden_size, self.hidden_size, 1)
-        self.readout = nn.Linear(self.hidden_size, 128, bias=True)
+        self.readout = nn.Linear(self.hidden_size, ar_size, bias=True)
 
     def initial_state(self, batch_size):
         device = next(self.parameters()).device

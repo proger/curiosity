@@ -58,21 +58,33 @@ def meta_predictor_step(
         models.reinit_conv2d_(grouped_random_target_network, seed=seed)
         local_random_embedding = grouped_random_target_network(batch['partial_obs'][1:].to(device=flags.device))
 
-    global_predicted_embedding, global_rnd_loss = predictor_network(
-        inputs=batch['partial_obs'][1:].to(device=flags.device),
-        done=done,
-        targets=global_random_embedding,
-    )
+    if flags.rnd_concat:
+        assert ignore_global == False
+        assert flags.rnd_global_loss_weight == 0.5
 
-    local_predicted_embedding, local_rnd_loss = predictor_network(
-        inputs=batch['partial_obs'][1:].to(device=flags.device),
-        done=done,
-        targets=local_random_embedding,
-    )
-    if ignore_global:
-        rnd_loss = (1-flags.rnd_global_loss_weight) * local_rnd_loss
+        predicted_embedding, rnd_loss = predictor_network(
+            inputs=batch['partial_obs'][1:].to(device=flags.device),
+            done=done,
+            targets=torch.cat([global_random_embedding, local_random_embedding], dim=2),
+        )
+        global_predicted_embedding, local_predicted_embedding = predicted_embedding.chunk(2, dim=-1)
+        rnd_loss = rnd_loss * flags.rnd_global_loss_weight
     else:
-        rnd_loss = flags.rnd_global_loss_weight * global_rnd_loss + (1-flags.rnd_global_loss_weight) * local_rnd_loss
+        global_predicted_embedding, global_rnd_loss = predictor_network(
+            inputs=batch['partial_obs'][1:].to(device=flags.device),
+            done=done,
+            targets=global_random_embedding,
+        )
+
+        local_predicted_embedding, local_rnd_loss = predictor_network(
+            inputs=batch['partial_obs'][1:].to(device=flags.device),
+            done=done,
+            targets=local_random_embedding,
+        )
+        if ignore_global:
+            rnd_loss = (1-flags.rnd_global_loss_weight) * local_rnd_loss
+        else:
+            rnd_loss = flags.rnd_global_loss_weight * global_rnd_loss + (1-flags.rnd_global_loss_weight) * local_rnd_loss
 
     local_intrinsic_rewards = torch.norm(local_predicted_embedding.detach() - local_random_embedding.detach(), dim=2, p=2)
     global_intrinsic_rewards = torch.norm(global_predicted_embedding.detach() - global_random_embedding.detach(), dim=2, p=2)
@@ -274,6 +286,7 @@ def train(flags):
                 history=flags.rnd_history,
                 autoregressive=flags.rnd_autoregressive,
                 hidden_size=flags.rnd_lstm_width,
+                ar_size=128*2 if flags.rnd_concat else 128,
                 supervise_everything=flags.rnd_supervise_everything,
                 supervise_early=flags.rnd_supervise_early,
             ).to(device=flags.device)
@@ -635,6 +648,7 @@ if __name__ == '__main__':
             history=flags.rnd_history,
             autoregressive=flags.rnd_autoregressive,
             hidden_size=flags.rnd_lstm_width,
+            ar_size=128*2 if flags.rnd_concat else 128,
             supervise_everything=flags.rnd_supervise_everything,
             supervise_early=flags.rnd_supervise_early,
         ).to(device=flags.device)
