@@ -56,7 +56,14 @@ def meta_predictor_step(
 
         seed = torch.randint(low=20, high=32788, size=(1,), generator=generator).item()
         models.reinit_conv2d_(grouped_random_target_network, seed=seed)
-        local_random_embedding = grouped_random_target_network(batch['partial_obs'][1:].to(device=flags.device))
+
+        partial_obs = batch['partial_obs'][1:].to(device=flags.device)
+        if partial_obs.shape[1] == 1:
+            partial_obs = partial_obs.repeat(1, 32, 1, 1, 1)
+            local_random_embedding = grouped_random_target_network(partial_obs)
+            local_random_embedding = local_random_embedding[:, :1, :]
+        else:
+            local_random_embedding = grouped_random_target_network(partial_obs)
 
     if flags.rnd_concat:
         assert ignore_global == False
