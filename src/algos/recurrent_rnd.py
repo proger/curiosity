@@ -446,7 +446,8 @@ def train(flags):
         }, str(path))
         test(model, random_target_network, predictor_network,
              env=None, flags=flags, videoroot=path.parent,
-             seeds=[3])
+             seeds=[3],
+             grouped_random_target_network=grouped_random_target_network)
 
     timer = timeit.default_timer
     try:
@@ -493,7 +494,8 @@ def train(flags):
     random_target_network.load_state_dict(last_checkpoint['random_target_network_state_dict'])
     predictor_network.load_state_dict(last_checkpoint['predictor_network_state_dict'])
     test(model, random_target_network, predictor_network,
-         env=None, flags=flags, videoroot=Path(checkpointpath).parent, seeds=[3,5,8,13,21,34])
+         env=None, flags=flags, videoroot=Path(checkpointpath).parent, seeds=[3,5,8,13,21,34],
+         grouped_random_target_network=grouped_random_target_network)
 
 
 def test(
@@ -505,6 +507,7 @@ def test(
     flags,
     videoroot=Path('.'),
     seeds=[3,5,8,13,21,34],
+    grouped_random_target_network=None,
 ):
     flags = copy.deepcopy(flags)
     flags.num_buffers = 1
@@ -550,21 +553,26 @@ def test(
             initial_agent_state_buffers, flags, timings)
 
         done = batch['done'][1:].to(device=flags.device)
-        #models.reinit_conv2d_(random_target_network, seed=16384)
-        random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
         if flags.rnd_autoregressive != 'no':
-            predicted_embedding, _ = predictor_network(
-                inputs=batch['partial_obs'][1:].to(device=flags.device),
+            intrinsic_rewards, _ = meta_predictor_step(
+                random_target_network=random_target_network,
+                grouped_random_target_network=grouped_random_target_network,
+                predictor_network=predictor_network,
+                batch=batch,
                 done=done,
-                targets=random_embedding.detach(),
+                flags=flags,
+                generator=torch.Generator().manual_seed(1337),
             )
         else:
+            #models.reinit_conv2d_(random_target_network, seed=16384)
+            random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
             predicted_embedding = predictor_network(
                 inputs=batch['partial_obs'][1:].to(device=flags.device),
                 done=done,
             )
 
-        intrinsic_rewards = flags.intrinsic_reward_coef * torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
+            intrinsic_rewards = flags.intrinsic_reward_coef * torch.norm(predicted_embedding.detach() - random_embedding.detach(), dim=2, p=2)
+
         intrinsic_rewards_list = intrinsic_rewards.view(-1).cpu().numpy().tolist()
         (videoroot / f'{seed}.rewards').write_text('\n'.join(map(str, intrinsic_rewards_list)))
 
@@ -642,6 +650,12 @@ if __name__ == '__main__':
             final_activation=False,
         ).to(device=flags.device)
         random_target_network.load_state_dict(checkpoint['random_target_network_state_dict'])
+
+        grouped_random_target_network = models.GroupedStateEmbeddingNet(
+            flags.batch_size,
+            env.observation_space.shape,
+            final_activation=False,
+        ).to(device=flags.device)
 
         predictor_network = models.MinigridStateSequenceNet(
             env.observation_space.shape,
