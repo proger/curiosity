@@ -799,36 +799,36 @@ class MiniGridEnv(gym.Env):
             3: '^'
         }
 
-        str = ''
+        str_ = ''
 
         for j in range(self.grid.height):
 
             for i in range(self.grid.width):
                 if i == self.agent_pos[0] and j == self.agent_pos[1]:
-                    str += 2 * AGENT_DIR_TO_STR[self.agent_dir]
+                    str_ += 2 * AGENT_DIR_TO_STR[self.agent_dir]
                     continue
 
                 c = self.grid.get(i, j)
 
                 if c == None:
-                    str += '  '
+                    str_ += '  '
                     continue
 
                 if c.type == 'door':
                     if c.is_open:
-                        str += '__'
+                        str_ += '__'
                     elif c.is_locked:
-                        str += 'L' + c.color[0].upper()
+                        str_ += 'L' + str(c.color)[0].upper()
                     else:
-                        str += 'D' + c.color[0].upper()
+                        str_ += 'D' + str(c.color)[0].upper()
                     continue
 
-                str += OBJECT_TO_STR[c.type] + c.color[0].upper()
+                str_ += OBJECT_TO_STR[c.type] + str(c.color)[0].upper()
 
             if j < self.grid.height - 1:
-                str += '\n'
+                str_ += '\n'
 
-        return str
+        return str_
 
     def _gen_grid(self, width, height):
         assert False, "_gen_grid needs to be implemented by each environment"
