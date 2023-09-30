@@ -22,228 +22,154 @@ def matshow(data, figsize=(15,5), axs=None):
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
                 ax.text(j, i, str(data[i, j, chan].item()), va='center', ha='center', color='black')
-                
-# # Facing right
-# if self.agent_dir == 0:
-# # Facing down
-# elif self.agent_dir == 1:
-# # Facing left
-# elif self.agent_dir == 2:
-# # Facing up
-# elif self.agent_dir == 3:
-
-def get_view_top(agent_pos, agent_view_size):
-    """
-    Get the extents of the square set of tiles visible to the agent
-    Note: the bottom extent indices are not included in the set
-    """
-
-    topXYOffset = torch.tensor([
-        # Facing right
-        [0, - (agent_view_size // 2)],
-        # Facing down
-        [- (agent_view_size // 2), 0],
-        # Facing left
-        [- agent_view_size + 1, - (agent_view_size // 2)],
-        # Facing up
-        [- (agent_view_size // 2), - agent_view_size + 1],        
-    ])
-
-    return topXYOffset + agent_pos
-
-def see_thru(obj, state):
-    if state == 1: # closed
-        return False
-    if obj == 2: # wall
-        return False
-    return True
 
 
-def og_crop(self):
-    topX, topY, botX, botY = self.get_view_exts()
-    print('slice', topX, topY, self.agent_view_size, self.agent_view_size)
-    agent_grid = self.grid.slice(topX, topY, self.agent_view_size, self.agent_view_size)
-    return torch.tensor(agent_grid.encode())
+class BatchCrop2d(nn.Module):
+    "Crop a grid of size HxW into a grid of size side x side given the top left corner of the crop"
+    def __init__(self, side=7):
+        super().__init__()
+        self.side = side
+        self.square = torch.cartesian_prod(torch.arange(side), torch.arange(side))
+
+    def forward(
+        self,
+        grid, # N, H, W, C
+        topXY # N, 2
+    ): # -> (N, side, side, C)
+        N, _ = topXY.shape
+        indices = self.square + topXY[:, None, :]
+        indices = torch.cat([
+            torch.arange(N).repeat_interleave(self.side*self.side)[:, None],
+            indices.view(-1, 2)
+        ], dim=-1)
+        return grid[indices[:,0], indices[:,1], indices[:,2], :].view(N, self.side, self.side, -1)
 
 
-def og_crop_rot(self):
-    topX, topY, botX, botY = self.get_view_exts()
-    agent_grid = self.grid.slice(topX, topY, self.agent_view_size, self.agent_view_size)
-
-    for i in range(self.agent_dir + 1):
-        agent_grid = agent_grid.rotate_left()
-
-    return torch.tensor(agent_grid.encode())
-
-def crop(self, pad=5):    
-    # look for gen_obs_grid
-    complete = torch.tensor(self.grid.encode())
-
-    if pad:
-        pad_value = 2
-        complete = torch.nn.functional.pad(complete, (0,0,pad,pad,pad,pad), mode='constant', value=pad_value)
-        
-    exts = get_view_top(self.agent_pos, self.agent_view_size)
-    print('view top', exts, 'exts', self.get_view_exts()[:2], 'dir', self.agent_dir, 'pos', self.agent_pos)
-    topX, topY = exts[self.agent_dir] + pad
-
-    print('sliceP', topX, topY, self.agent_view_size, self.agent_view_size)
-    return complete[topX:topX+self.agent_view_size, topY:topY+self.agent_view_size, :]
+def inverse_permutation(perm):
+    inv = torch.empty_like(perm)
+    inv[perm] = torch.arange(perm.size(0), device=perm.device)
+    return inv
 
 
-def crop_rot(self):
-    code = crop(self)
-    code = code.rot90(self.agent_dir+1, dims=(1,0))
-    return code    
+def rotate_grouped(grid, directions):
+    # split grid into 4 groups for each direction:
+    # direction 0 means rot90 with k=1
+    # direction 1 means rot90 with k=2
+    # direction 2 means rot90 with k=3
+    # direction 3 means rot90 with k=4 (identity)
+
+    directions_0 = torch.where(directions==0)[0]
+    directions_1 = torch.where(directions==1)[0]
+    directions_2 = torch.where(directions==2)[0]
+    directions_3 = torch.where(directions==3)[0]
+
+    rot1 = grid[directions_0].rot90(1, dims=(2,1))
+    rot2 = grid[directions_1].rot90(2, dims=(2,1))
+    rot3 = grid[directions_2].rot90(3, dims=(2,1))
+    rot4 = grid[directions_3]
+
+    # reassemble groups
+    grid = torch.cat([rot1, rot2, rot3, rot4], dim=0)
+    perm = torch.cat([directions_0, directions_1, directions_2, directions_3], dim=0)
+    # permute back to original order
+    return grid[inverse_permutation(perm)]
 
 
-def get_agent_grid_encoding(self, mask=True):
-    code = crop_rot(self)
+class BatchMinigrid:
+    def __init__(self, seeds=[3,5,7]):
+        def make(seed):
+            env = MultiRoomEnv(7,7,4,coloredWalls=False)
+            env.seed(seed)
+            env.reset()
+            return env
 
-    agent_pos = torch.tensor([(self.agent_view_size // 2 , self.agent_view_size - 1)])
+        self.envs = [make(seed) for seed in seeds]
+        self.grids = torch.tensor(np.stack([env.grid.encode() for env in self.envs])) # N, H, W, C
+        self.agent_pos = torch.tensor(np.array([env.agent_pos for env in self.envs])) # N, 2
+        self.agent_dir = torch.tensor([env.agent_dir for env in self.envs]) # N,
+        self.agent_view_size = 7
 
-    print('pos and shape', agent_pos, code.shape)
-    assert code.numel()
+        self.agent_pos_fpv = (self.agent_view_size // 2 , self.agent_view_size - 1)
 
-    if mask:
-        return mask_agent_grid_encoding(code, agent_pos, self.agent_view_size)
-    else:
-        return code
+        self.masker = Mask()
+        self.crop = BatchCrop2d(side=self.agent_view_size)
 
-def make(seed):
-    env = MultiRoomEnv(7,7,4,coloredWalls=False)
-    env.seed(seed)
-    env.reset()
-    return env
+    @staticmethod
+    def render_fpv_slow1(env, mask=True):
+        self = env
+        topX, topY, botX, botY = self.get_view_exts()
 
-def mask_agent_grid_encoding(code, agent_pos, agent_view_size):
-    neighbors = torch.tensor([(0,1), (1,0), (0,-1), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)])
+        agent_grid = self.grid.slice(topX, topY, self.agent_view_size, self.agent_view_size)
 
-    mask = torch.zeros_like(code[:,:,0], dtype=int)
-    # 0 unk
-    # 1 false
-    # 2 true
-    mask[agent_pos[0,0], agent_pos[0,1]] = 2
+        for i in range(self.agent_dir + 1):
+            agent_grid = agent_grid.rotate_left()
 
-    visited = torch.zeros_like(code[:,:,0], dtype=torch.bool)
-    visited[agent_pos[0,0], agent_pos[0,1]] = True
+        if mask:
+            # prevent seeing through walls
+            vis_mask = agent_grid.process_vis(agent_pos=(self.agent_view_size // 2 , self.agent_view_size - 1))
+            agent_frame = agent_grid.encode(vis_mask)
+        else:
+            agent_frame = agent_grid.encode()
+        return torch.from_numpy(agent_frame)
 
-    targets = list(agent_pos + neighbors)
-    sources = list([agent_pos[0]]*len(neighbors))
+    def render_fpv_slow(self):
+        return torch.stack([self.render_fpv_slow1(env) for env in self.envs])
 
-    # print(mask)
-    # print('sources', sources)
+    def render_fpv(self, pad=5):
+        N, H, W, C = self.grids.shape
+        agent_view_size = self.agent_view_size
 
-    fuel = 100
+        grid = self.grids
+        if pad:
+            pad_value = 2
+            grid = torch.nn.functional.pad(grid, (0,0,pad,pad,pad,pad), mode='constant', value=pad_value)
 
-    while targets:
-        nei, src = targets.pop(0), sources.pop(0)
-        if nei[0] < 0 or nei[1] < 0 or nei[0] >= agent_view_size or nei[1] >= agent_view_size:
-            continue
+        """
+        Get the extents of the square set of tiles visible to the agent
+        Note: the bottom extent indices are not included in the set
+        """
+        topXYOffset = torch.tensor([
+            # Facing right
+            [0, - (agent_view_size // 2)],
+            # Facing down
+            [- (agent_view_size // 2), 0],
+            # Facing left
+            [- agent_view_size + 1, - (agent_view_size // 2)],
+            # Facing up
+            [- (agent_view_size // 2), - agent_view_size + 1],        
+        ])
 
-        can_see_thru = see_thru(code[nei[0], nei[1], 0], code[nei[0], nei[1], 2])
-        if mask[src[0], src[1]] == 2:
-            if can_see_thru:
-                mask[nei[0], nei[1]] = 2
-            else:
-                mask[nei[0], nei[1]] = 1
-        elif mask[src[0], src[1]] == 1:
-            mask[nei[0], nei[1]] = max(0, mask[nei[0], nei[1]])
-        elif mask[src[0], src[1]] == 0:
-            #print('wow', nei, src)
-            pass
+        top = (self.agent_pos + topXYOffset[:, None, :])[self.agent_dir, torch.arange(N), :] + pad
 
-        visited[nei[0], nei[1]] = True
-        for x in neighbors:
-            source = nei
-            target = nei+x
-            if target[0] < 0 or target[1] < 0 or target[0] >= agent_view_size or target[1] >= agent_view_size:
-                continue
-            if not visited[nei[0]+x[0], nei[1]+x[1]]:
-                targets.append(target)
-                sources.append(source)
+        grid = self.crop(grid, top)
+        grid = rotate_grouped(grid, self.agent_dir)
 
-        fuel -= 1
-        if not fuel:
-            break
+        walls = grid[:,:,:,0]==2 # object wall
+        closed = grid[:,:,:,2]==1 # state closed
+        me = torch.zeros(N, 1, agent_view_size, agent_view_size)
+        me[:, :, self.agent_pos_fpv[0], self.agent_pos_fpv[1]] = 1
 
-    return mask[:,:,None].to(bool)*code
+        #print(walls|closed, 'obstacles')
+        mask = self.masker(me, closed=(walls|closed).unsqueeze(1))
 
-def batch_mask(
-    code, # N, 7, 7, 3
-    agent_view_size=7
-):
-    agent_pos = torch.tensor([(agent_view_size // 2 , agent_view_size - 1)])
+        return mask.permute(0, 2, 3, 1)*grid
 
-    neighbors = torch.tensor([(0,1), (1,0), (0,-1), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)])
+    def rotate(self, directions):
+        self.agent_dir = (self.agent_dir + directions) % 4
 
-    mask = torch.zeros_like(code[...,0], dtype=int)
-    # 0 unk
-    # 1 false
-    # 2 true
-    mask[:, agent_pos[0,0,0], agent_pos[0,0,1]] = 2
+    def toggle(self, actions):
+        # for each grid if the agent is in front of a closed door, open it
+        pass
 
-    visited = torch.zeros_like(code[...,0], dtype=torch.bool)
-    visited[:, agent_pos[0,0], agent_pos[0,1]] = True
-
-    targets = list(agent_pos + neighbors)
-    sources = list([agent_pos[0]]*len(neighbors))
-
-    # print(mask)
-    # print('sources', sources)
-
-    fuel = 100
-
-    while targets:
-        nei, src = targets.pop(0), sources.pop(0)
-        if nei[0] < 0 or nei[1] < 0 or nei[0] >= agent_view_size or nei[1] >= agent_view_size:
-            continue
-
-        can_see_thru = see_thru(code[nei[0], nei[1], 0], code[nei[0], nei[1], 2])
-        if mask[src[0], src[1]] == 2:
-            if can_see_thru:
-                mask[nei[0], nei[1]] = 2
-            else:
-                mask[nei[0], nei[1]] = 1
-        elif mask[src[0], src[1]] == 1:
-            mask[nei[0], nei[1]] = max(0, mask[nei[0], nei[1]])
-        elif mask[src[0], src[1]] == 0:
-            #print('wow', nei, src)
-            pass
-
-        visited[nei[0], nei[1]] = True
-        for x in neighbors:
-            source = nei
-            target = nei+x
-            if target[0] < 0 or target[1] < 0 or target[0] >= agent_view_size or target[1] >= agent_view_size:
-                continue
-            if not visited[nei[0]+x[0], nei[1]+x[1]]:
-                targets.append(target)
-                sources.append(source)
-
-        fuel -= 1
-        if not fuel:
-            break
-
-    return mask[:,:,None].to(bool)*code
-
-
-def og_get_agent_grid_encoding(env, mask=True):
-    self = env
-    topX, topY, botX, botY = self.get_view_exts()
-
-    agent_grid = self.grid.slice(topX, topY, self.agent_view_size, self.agent_view_size)
-
-    for i in range(self.agent_dir + 1):
-        agent_grid = agent_grid.rotate_left()
-
-    if mask:
-        # prevent seeing through walls
-        vis_mask = agent_grid.process_vis(agent_pos=(self.agent_view_size // 2 , self.agent_view_size - 1))
-        agent_frame = agent_grid.encode(vis_mask)
-    else:
-        agent_frame = agent_grid.encode()
-    return torch.from_numpy(agent_frame)
+    def step(self, actions):
+        obs, reward, done, info = [], [], [], []
+        for i, env in enumerate(self.envs):
+            obs1, reward1, done1, info1 = env.step(actions[i])
+            obs.append(obs1)
+            reward.append(reward1)
+            done.append(done1)
+            info.append(info1)
+        return obs, reward, done, info
 
 
 class Mask(nn.Module):
@@ -258,38 +184,36 @@ class Mask(nn.Module):
 
     def forward(
         self,
-        grid, # float zero grid with 1 where agent is
-        closed # bool zero grid with 1 where obstacles are
+        grid, # float zero grid with 1 where agent is, N 1 H H
+        closed # bool zero grid with 1 where obstacles are, N 1 H H
     ):
+        print = lambda *args: None
+
         # propagate signal from starting cell
         for _ in range(self.steps):
             grid = self.step(grid)
             print(grid, 'pre', _)
             # activation: squash and restore obstacles
-            grid = -0.01 * closed + grid * (1 - closed.float())
+            grid = -0.01 * closed + grid.tanh() * (1 - closed.float())
             print(grid, _)
 
-        # explicitly discriminate reached from unreached cells
-        # and restore obstacles
-        grid = torch.where((grid>0)|closed, 1., -1.)
-        #print(grid, 'signed and restored')
+        # take only reached cells
+        grid = (grid>0).float()
+        print(grid, 'signed and restored')
 
         # connect nearby obstacles
-        grid = self.step(grid)
-        #print(grid)
+        grid = self.step(grid.float())
+        print(grid)
 
         return grid>0
 
 
 
 if __name__ == '__main__':
-    for seed in [5,3,7,9,11,13,15]:
-        env = MultiRoomEnv(7,7,4,coloredWalls=False)
-        env.seed(seed)
-        env.reset()
-        print(seed)
-        if not torch.allclose(fg.og_get_agent_grid_encoding(env), fg.get_agent_grid_encoding(env)):
-            print('mismatch', seed)
-            matshow(crop(env, pad=4))
-            matshow(og_crop(env))
-            assert False
+    def testeach(xs, ys):
+        return [torch.allclose(x, y) for x, y in zip(xs, ys)]
+
+    b = BatchMinigrid(seeds=[3,5,16,7,10,9,14,15,16,17,18,19,20,21,22])
+
+    for x in testeach(b.render_fpv(), b.render_fpv_slow()):
+        print(x)
