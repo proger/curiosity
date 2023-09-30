@@ -29,7 +29,7 @@ class BatchCrop2d(nn.Module):
     def __init__(self, side=7):
         super().__init__()
         self.side = side
-        self.square = torch.cartesian_prod(torch.arange(side), torch.arange(side))
+        self.square = nn.Parameter(torch.cartesian_prod(torch.arange(side), torch.arange(side)), requires_grad=False)
 
     def forward(
         self,
@@ -39,7 +39,7 @@ class BatchCrop2d(nn.Module):
         N, _ = topXY.shape
         indices = self.square + topXY[:, None, :]
         indices = torch.cat([
-            torch.arange(N).repeat_interleave(self.side*self.side)[:, None],
+            torch.arange(N, device=grid.device).repeat_interleave(self.side*self.side)[:, None],
             indices.view(-1, 2)
         ], dim=-1)
         return grid[indices[:,0], indices[:,1], indices[:,2], :].view(N, self.side, self.side, -1)
@@ -75,8 +75,10 @@ def rotate_grouped(grid, directions):
     return grid[inverse_permutation(perm)]
 
 
-class BatchMinigrid:
+class BatchMinigrid(nn.Module):
     def __init__(self, seeds=[3,5,7]):
+        super().__init__()
+
         def make(seed):
             env = MultiRoomEnv(7,7,4,coloredWalls=False)
             env.seed(seed)
@@ -84,9 +86,9 @@ class BatchMinigrid:
             return env
 
         self.envs = [make(seed) for seed in seeds]
-        self.grids = torch.tensor(np.stack([env.grid.encode() for env in self.envs])) # N, H, W, C
-        self.agent_pos = torch.tensor(np.array([env.agent_pos for env in self.envs])) # N, 2
-        self.agent_dir = torch.tensor([env.agent_dir for env in self.envs]) # N,
+        self.grids = nn.Parameter(torch.tensor(np.stack([env.grid.encode() for env in self.envs])), requires_grad=False) # N, H, W, C
+        self.agent_pos = nn.Parameter(torch.tensor(np.array([env.agent_pos for env in self.envs])), requires_grad=False) # N, 2
+        self.agent_dir = nn.Parameter(torch.tensor([env.agent_dir for env in self.envs]), requires_grad=False) # N,
         self.agent_view_size = 7
 
         self.agent_pos_fpv = (self.agent_view_size // 2 , self.agent_view_size - 1)
@@ -139,7 +141,7 @@ class BatchMinigrid:
             [- agent_view_size + 1, - (agent_view_size // 2)],
             # Facing up
             [- (agent_view_size // 2), - agent_view_size + 1],
-        ])
+        ], device=grid.device)
 
         top = (self.agent_pos + topXYOffset[:, None, :])[self.agent_dir, torch.arange(N), :] + pad
 
@@ -148,7 +150,7 @@ class BatchMinigrid:
 
         walls = grid[:,:,:,0]==2 # object wall
         closed = grid[:,:,:,2]==1 # state closed
-        me = torch.zeros(N, 1, agent_view_size, agent_view_size)
+        me = torch.zeros(N, 1, agent_view_size, agent_view_size, device=grid.device)
         me[:, :, self.agent_pos_fpv[0], self.agent_pos_fpv[1]] = 1
 
         #print(walls|closed, 'obstacles')
@@ -167,7 +169,7 @@ class BatchMinigrid:
         actions # (N,), 1 means toggle, 0 means don't toggle
     ):
         # for each grid if the agent is in front of a closed door, open it
-        each = torch.arange(len(actions))
+        each = torch.arange(len(actions), device=actions.device)
 
         directions = self.agent_dir
         # 0 facing right: +1 in second dim
@@ -209,7 +211,7 @@ class BatchMinigrid:
         self,
         actions, # (N,), 1 means move forward, 0 means don't move
     ):
-        each = torch.arange(len(actions))
+        each = torch.arange(len(actions), device=actions.device)
         assert len(self.agent_pos) == len(actions)
 
         directions = self.agent_dir
@@ -247,7 +249,7 @@ class BatchMinigrid:
             [1, 0],
             [0, -1],
             [-1, 0],
-        ])[None, :, :] + self.agent_pos[:, None, :])[each, directions] # N, 2
+        ], device=actions.device)[None, :, :] + self.agent_pos[:, None, :])[each, directions] # N, 2
 
         next_agent_pos = torch.where(can_move[:, None]*actions[:, None].bool(), next_agent_pos, self.agent_pos)
         done = torch.stack([
@@ -271,10 +273,10 @@ class BatchMinigrid:
         toggle = actions == 5
 
         next_agent_dir = self._rotate(rotate_right.int() - rotate_left.int())
-        self.agent_dir = next_agent_dir
+        self.agent_dir.data = next_agent_dir
         self._toggle_(toggle)
         next_agent_pos, done = self._move_forward(move)
-        self.agent_pos = next_agent_pos
+        self.agent_pos.data = next_agent_pos
 
         obs = self.render_fpv()
         reward = done.long()
