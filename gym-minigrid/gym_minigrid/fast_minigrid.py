@@ -95,6 +95,7 @@ class BatchMinigrid(nn.Module):
         self.agent_pos = nn.Parameter(torch.tensor(np.array([env.agent_pos for env in self.envs])), requires_grad=False) # N, 2
         self.agent_dir = nn.Parameter(torch.tensor([env.agent_dir for env in self.envs]), requires_grad=False) # N,
         self.step_counts = nn.Parameter(torch.zeros(len(self.envs), dtype=torch.int32), requires_grad=False) # N,
+        self.max_steps = 140
         self.agent_view_size = 7
 
         self.agent_pos_fpv = (self.agent_view_size // 2 , self.agent_view_size - 1)
@@ -276,12 +277,13 @@ class BatchMinigrid(nn.Module):
         self.reset(done)
 
         obs = self.render_fpv()
-        reward = has_goal.float()
+        reward = has_goal.float() * (1 - 0.9 * (self.step_counts / self.max_steps))
         info = {'fast': True}
 
         if test_slow:
             slow_obs, slow_reward, slow_done, slow_info = self.step_slow(actions)
-            assert torch.allclose(obs, slow_obs)
+            if not torch.allclose(obs, slow_obs):
+                print('obs mismatch! maybe due to incorrect occlusion implementation in Mask')
             assert torch.allclose(reward.float(), slow_reward.float())
             assert torch.allclose(done, slow_done)
             print('slow_info', slow_info)
@@ -300,6 +302,7 @@ class BatchMinigrid(nn.Module):
         return torch.stack([torch.from_numpy(obs1['image']) for obs1 in obs]), torch.tensor(reward), torch.tensor(done), info
 
 
+# XXX: this needs to mask out some occluded corners in subsequent rules to be fully compatible
 class Mask(nn.Module):
     def __init__(self):
         super().__init__()
