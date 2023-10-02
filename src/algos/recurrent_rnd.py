@@ -375,8 +375,6 @@ def train(flags):
         actor_pool = ActorPool(model, flags)
         actor_pool = actor_pool.to(device=flags.device)
         actor_pool.prepare()
-        actor_pool() # warmup
-        #import ipdb; ipdb.set_trace()
 
     def batch_and_learn(i, lock=threading.Lock()):
         """Thread target for the learning process."""
@@ -391,7 +389,6 @@ def train(flags):
             else:
                 batch, agent_state = get_batch(free_queue, full_queue, buffers, 
                     initial_agent_state_buffers, flags, timings)
-                print(torch.where(batch['done']))
 
             if flags.megabuffer:
                 megabuffer = cat_buffers(megabuffer, batch)

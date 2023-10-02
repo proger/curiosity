@@ -177,7 +177,7 @@ class ActorPool(nn.Module):
         self.unroll_episode_return = self.unroll_episode_return[-1:]
 
         episode_returns = batch['episode_return'][batch['done']]
-        print(torch.where(batch['done']))
+        #print(torch.where(batch['done']))
         return batch, self.agent_state
 
 
