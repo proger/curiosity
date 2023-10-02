@@ -81,6 +81,7 @@ def create_env(flags):
         return env
 
 import torch.nn as nn
+from gym_minigrid.fast_minigrid import BatchMinigrid, TimeCrop
 
 class ActorPool(nn.Module):
     def __init__(self, policy, flags):
@@ -89,10 +90,10 @@ class ActorPool(nn.Module):
         self.batch_size = flags.batch_size
         self.unroll_length = flags.unroll_length
 
-        from gym_minigrid.fast_minigrid import BatchMinigrid
-        env_seeds = torch.randint(0, 2**32 - 1, (self.batch_size,)).tolist()
-        self.batch_env = BatchMinigrid(seeds=env_seeds)
         self.policy = policy
+
+        self.batch_env = None # BatchMinigrid(seeds=[]) # to be initialized in prepare()
+        self.time_crop = TimeCrop()
 
         self.unroll_partial_obs = []
         self.unroll_reward = []
@@ -102,7 +103,7 @@ class ActorPool(nn.Module):
         self.unroll_episode_return = []
 
     @torch.no_grad()
-    def prepare(self):
+    def prepare(self, steps=4):
         # env_output frame
         # ! env_output reward
         # ! env_output done
@@ -120,27 +121,69 @@ class ActorPool(nn.Module):
         done = torch.zeros(self.batch_size, dtype=torch.bool, device=device)
         reward = torch.zeros(self.batch_size, dtype=torch.float32, device=device)
 
-        self.agent_state = self.policy.initial_state(batch_size=self.batch_size)
+        agent_states = []
 
-        partial_obs = self.batch_env.render_fpv()[None, ...]
-        agent_output, unused_state = self.policy({
-            'partial_obs': partial_obs,
-            'done': done,
-        }, self.agent_state)
+        env_seeds = torch.randint(0, 2**32 - 1, (self.batch_size,)).tolist()
+        for i, chunk in enumerate(range(0, self.batch_size, steps)):
+            chunk_seeds = env_seeds[chunk:chunk+steps]
+            print(i, chunk_seeds)
+            batch_env = BatchMinigrid(seeds=chunk_seeds).to(device)
+            agent_state = self.policy.initial_state(batch_size=len(chunk_seeds))
 
-        self.unroll_partial_obs.append(partial_obs)
-        self.unroll_done.append(done)
-        self.unroll_reward.append(reward)
-        self.unroll_action.append(agent_output['action'])
-        self.unroll_policy_logits.append(agent_output['policy_logits'])
-        self.unroll_episode_return.append(reward)
+            partial_obs = batch_env.render_fpv()[None, ...]
+
+            chunk_partial_obs = []
+            chunk_done = []
+            chunk_reward = []
+            chunk_action = []
+            chunk_policy_logits = []
+            chunk_episode_return = []
+
+            # run each chunk for some number of steps to avoid correlations in timesteps
+            for step in range(10*(i+1)):
+                agent_output, agent_state = self.policy({
+                    'partial_obs': partial_obs,
+                    'done': done,
+                }, agent_state)
+                partial_obs, reward, done, _ = batch_env.step(agent_output['action'][0])
+                partial_obs = partial_obs[None, ...]
+
+                chunk_partial_obs.append(partial_obs)
+                chunk_done.append(done)
+                chunk_reward.append(reward)
+                chunk_action.append(agent_output['action'])
+                chunk_policy_logits.append(agent_output['policy_logits'])
+                chunk_episode_return.append(reward)
+
+            self.unroll_partial_obs.append(chunk_partial_obs[-1])
+            self.unroll_done.append(chunk_done[-1])
+            self.unroll_reward.append(chunk_reward[-1])
+            self.unroll_action.append(chunk_action[-1])
+            self.unroll_policy_logits.append(chunk_policy_logits[-1])
+            self.unroll_episode_return.append(chunk_episode_return[-1])
+            agent_states.append(agent_state)
+
+            if self.batch_env is None:
+                self.batch_env = batch_env
+            else:
+                self.batch_env.merge(batch_env)
+
+        self.agent_state = tuple(torch.cat(ts, dim=1) for ts in zip(*agent_states))
+
+        self.unroll_partial_obs = [torch.cat(self.unroll_partial_obs, dim=1)]
+        self.unroll_done = [torch.cat(self.unroll_done)]
+        self.unroll_reward = [torch.cat(self.unroll_reward)]
+        self.unroll_action = [torch.cat(self.unroll_action, dim=1)]
+        self.unroll_policy_logits = [torch.cat(self.unroll_policy_logits, dim=1)]
+        self.unroll_episode_return = [torch.cat(self.unroll_episode_return)]
+
 
     @torch.no_grad()
-    def forward(self):
-        device = next(self.policy.parameters()).device
-
+    def forward(self, truncate=True):
         partial_obs = self.unroll_partial_obs[-1]
         done = self.unroll_done[-1]
+
+        initial_agent_state = self.agent_state
 
         for t in range(self.unroll_length):
             agent_output, self.agent_state = self.policy({
@@ -150,7 +193,6 @@ class ActorPool(nn.Module):
 
             partial_obs, reward, done, _ = self.batch_env.step(agent_output['action'][0])
             partial_obs = partial_obs[None, ...]
-            # if done we need to reset that environment
 
             self.unroll_partial_obs.append(partial_obs)
             self.unroll_reward.append(reward)
@@ -168,17 +210,18 @@ class ActorPool(nn.Module):
             'episode_return': torch.stack(self.unroll_episode_return),
         }
 
-        # remove all but the last frame in the unroll
-        self.unroll_partial_obs = self.unroll_partial_obs[-1:]
-        self.unroll_reward = self.unroll_reward[-1:]
-        self.unroll_done = self.unroll_done[-1:]
-        self.unroll_action = self.unroll_action[-1:]
-        self.unroll_policy_logits = self.unroll_policy_logits[-1:]
-        self.unroll_episode_return = self.unroll_episode_return[-1:]
+        if truncate:
+            # remove all but the last frame in the unroll
+            self.unroll_partial_obs = self.unroll_partial_obs[-1:]
+            self.unroll_reward = self.unroll_reward[-1:]
+            self.unroll_done = self.unroll_done[-1:]
+            self.unroll_action = self.unroll_action[-1:]
+            self.unroll_policy_logits = self.unroll_policy_logits[-1:]
+            self.unroll_episode_return = self.unroll_episode_return[-1:]
 
-        episode_returns = batch['episode_return'][batch['done']]
-        #print(torch.where(batch['done']))
-        return batch, self.agent_state
+        #episode_returns = batch['episode_return'][batch['done']]
+        #print(torch.where(batch['done'])[0])
+        return batch, initial_agent_state
 
 
 

@@ -29,6 +29,27 @@ def matshow(data, figsize=(15,5), axs=None, title='', agent_pos=None):
     return axs
 
 
+class TimeCrop(nn.Module):
+    "Crop a chunk of size T given starting points"
+    def __init__(self, side=100):
+        super().__init__()
+        self.side = side
+        self.steps = nn.Parameter(torch.arange(side), requires_grad=False)
+
+    def forward(
+        self,
+        grid, # T+k, N, C
+        top # N,
+    ): # -> (N, side, side, C)
+        N = top.shape[0]
+        indices = self.steps + top[:, None]
+        indices = torch.cat([
+            torch.arange(N, device=grid.device).repeat_interleave(self.side)[:, None],
+            indices.view(-1, 1)
+        ], dim=-1)
+        return grid[indices[:,0], indices[:,1], :].view(N, self.side, -1).permute(1, 0, 2)
+
+
 class BatchCrop2d(nn.Module):
     "Crop a grid of size HxW into a grid of size side x side given the top left corner of the crop"
     def __init__(self, side=7):
@@ -102,6 +123,17 @@ class BatchMinigrid(nn.Module):
 
         self.masker = Mask()
         self.crop = BatchCrop2d(side=self.agent_view_size)
+
+    def merge(self, other):
+        # merge two batches of environments
+        assert self.agent_view_size == other.agent_view_size
+        assert self.max_steps == other.max_steps
+        self.envs.extend(other.envs)
+        self.grids.data = torch.cat([self.grids, other.grids], dim=0)
+        self.agent_pos.data = torch.cat([self.agent_pos, other.agent_pos], dim=0)
+        self.agent_dir.data = torch.cat([self.agent_dir, other.agent_dir], dim=0)
+        self.step_counts.data = torch.cat([self.step_counts, other.step_counts], dim=0)
+        return self
 
     def reset(self, done):
         # do env.reset() and read new grids for all environments that are done
