@@ -31,6 +31,7 @@ import src.losses as losses
 
 from src.env_utils import FrameStack
 from src.utils import get_batch, log, create_env, create_buffers, act, cat_buffers
+from src.utils import ActorPool
 
 MarioDoomPolicyNet = models.MarioDoomPolicyNet
 MarioDoomStateEmbeddingNet = models.MarioDoomStateEmbeddingNet
@@ -370,6 +371,12 @@ def train(flags):
 
     meta_generator = torch.Generator().manual_seed(flags.rnd_meta_seed)
 
+    if '-fast' in flags.env:
+        actor_pool = ActorPool(model, flags)
+        actor_pool = actor_pool.to(device=flags.device)
+        actor_pool.prepare()
+        actor_pool() # warmup
+        #import ipdb; ipdb.set_trace()
 
     def batch_and_learn(i, lock=threading.Lock()):
         """Thread target for the learning process."""
@@ -378,8 +385,14 @@ def train(flags):
         megabuffer = None
         while frames < flags.total_frames:
             timings.reset()
-            batch, agent_state = get_batch(free_queue, full_queue, buffers, 
-                initial_agent_state_buffers, flags, timings)
+            if '-fast' in flags.env:
+                batch, agent_state = actor_pool()
+                timings.time('actor_pool')
+            else:
+                batch, agent_state = get_batch(free_queue, full_queue, buffers, 
+                    initial_agent_state_buffers, flags, timings)
+                print(torch.where(batch['done']))
+
             if flags.megabuffer:
                 megabuffer = cat_buffers(megabuffer, batch)
             stats = learn(model, learner_model, random_target_network, grouped_random_target_network, predictor_network,

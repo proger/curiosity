@@ -5,14 +5,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-def matshow(data, figsize=(15,5), axs=None):
+def matshow(data, figsize=(15,5), axs=None, title='', agent_pos=None):
     if axs is None:
         fig, axs = plt.subplots(1, 3, figsize=figsize)
+        if title:
+            fig.suptitle(title)
 
     for chan, ax in enumerate(axs):
         ax.matshow(data[:,:,chan], cmap='tab20b')
         if chan == 0:
             ax.set_title('OBJECT_IDX')
+            if agent_pos is not None:
+                ax.scatter(agent_pos[1], agent_pos[0], marker='*', s=200, c='black')
         elif chan == 1:
             ax.set_title('COLOR_IDX')
         elif chan == 2:
@@ -22,6 +26,7 @@ def matshow(data, figsize=(15,5), axs=None):
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
                 ax.text(j, i, str(data[i, j, chan].item()), va='center', ha='center', color='black')
+    return axs
 
 
 class BatchCrop2d(nn.Module):
@@ -89,12 +94,28 @@ class BatchMinigrid(nn.Module):
         self.grids = nn.Parameter(torch.tensor(np.stack([env.grid.encode() for env in self.envs])), requires_grad=False) # N, H, W, C
         self.agent_pos = nn.Parameter(torch.tensor(np.array([env.agent_pos for env in self.envs])), requires_grad=False) # N, 2
         self.agent_dir = nn.Parameter(torch.tensor([env.agent_dir for env in self.envs]), requires_grad=False) # N,
+        self.step_counts = nn.Parameter(torch.zeros(len(self.envs), dtype=torch.int32), requires_grad=False) # N,
         self.agent_view_size = 7
 
         self.agent_pos_fpv = (self.agent_view_size // 2 , self.agent_view_size - 1)
 
         self.masker = Mask()
         self.crop = BatchCrop2d(side=self.agent_view_size)
+
+    def reset(self, done):
+        # do env.reset() and read new grids for all environments that are done
+        # TODO: maintain a list of fresh environments in another thread
+
+        if done.sum() == 0:
+            return
+
+        for i, env in enumerate(self.envs):
+            if done[i]:
+                env.reset()
+                self.grids[i] = torch.from_numpy(env.grid.encode())
+                self.agent_pos[i] = torch.tensor(env.agent_pos)
+                self.agent_dir[i] = env.agent_dir
+                self.step_counts[i] = 0
 
     @staticmethod
     def render_fpv_slow1(env, mask=True):
@@ -172,40 +193,22 @@ class BatchMinigrid(nn.Module):
         each = torch.arange(len(actions), device=actions.device)
 
         directions = self.agent_dir
-        # 0 facing right: +1 in second dim
-        # 1 facing down: +1 in first dim
-        # 2 facing left: -1 in second dim
-        # 3 facing up: -1 in first dim
 
-        # if facing closed door, open it
-        right_door = self.grids[each, self.agent_pos[:, 0], self.agent_pos[:, 1]+1, 2] == 1
-        down_door = self.grids[each, self.agent_pos[:, 0]+1, self.agent_pos[:, 1], 2] == 1
-        left_door = self.grids[each, self.agent_pos[:, 0], self.agent_pos[:, 1]-1, 2] == 1
-        up_door = self.grids[each, self.agent_pos[:, 0]-1, self.agent_pos[:, 1], 2] == 1
+        front_pos = (torch.tensor([
+            [1, 0],
+            [0, 1],
+            [-0, 0],
+            [0, -1],
+        ], device=actions.device)[None, :, :] + self.agent_pos[:, None, :])[each, directions] # N, 2
+
+        # am i facing a closed door?
+        next_door = self.grids[each, front_pos[:, 0], front_pos[:, 1], 2] == 1
 
         # if didn't ask to toggle, don't toggle
-        right_door &= actions.bool()
-        down_door &= actions.bool()
-        left_door &= actions.bool()
-        up_door &= actions.bool()
+        next_door &= actions.bool()
 
-        # toggle only in matching direction
-        right_door &= directions == 0
-        down_door &= directions == 1
-        left_door &= directions == 2
-        up_door &= directions == 3
-
-        right_door = right_door[directions == 0]
-        down_door = down_door[directions == 1]
-        left_door = left_door[directions == 2]
-        up_door = up_door[directions == 3]
-
-        # change the door state
-        self.grids[directions == 0, self.agent_pos[directions == 0, 0], self.agent_pos[directions == 0, 1]+1, 2] += right_door * 1
-        self.grids[directions == 1, self.agent_pos[directions == 1, 0]+1, self.agent_pos[directions == 1, 1], 2] += down_door * 1
-        self.grids[directions == 2, self.agent_pos[directions == 2, 0], self.agent_pos[directions == 2, 1]-1, 2] += left_door * 1
-        self.grids[directions == 3, self.agent_pos[directions == 3, 0]-1, self.agent_pos[directions == 3, 1], 2] += up_door * 1
-
+        # change the door state to 0 (open)
+        self.grids[each, front_pos[:, 0], front_pos[:, 1], 2] += next_door * -1
 
     def _move_forward(
         self,
@@ -215,49 +218,39 @@ class BatchMinigrid(nn.Module):
         assert len(self.agent_pos) == len(actions)
 
         directions = self.agent_dir
-        # 0 facing right: +1 in second dim
-        # 1 facing down: +1 in first dim
-        # 2 facing left: -1 in second dim
-        # 3 facing up: -1 in first dim
 
-        # if facing wall or closed door, don't move
-        right_wall = self.grids[each, self.agent_pos[:, 0], self.agent_pos[:, 1]+1, 0] == 2
-        right_door = self.grids[each, self.agent_pos[:, 0], self.agent_pos[:, 1]+1, 2] == 1
-        down_wall = self.grids[each, self.agent_pos[:, 0]+1, self.agent_pos[:, 1], 0] == 2
-        down_door = self.grids[each, self.agent_pos[:, 0]+1, self.agent_pos[:, 1], 2] == 1
-        left_wall = self.grids[each, self.agent_pos[:, 0], self.agent_pos[:, 1]-1, 0] == 2
-        left_door = self.grids[each, self.agent_pos[:, 0], self.agent_pos[:, 1]-1, 2] == 1
-        up_wall = self.grids[each, self.agent_pos[:, 0]-1, self.agent_pos[:, 1], 0] == 2
-        up_door = self.grids[each, self.agent_pos[:, 0]-1, self.agent_pos[:, 1], 2] == 1
-
-        # if facing goal, don't move, end episode
-        right_goal = self.grids[each, self.agent_pos[:, 0], self.agent_pos[:, 1]+1, 0] == 8
-        down_goal = self.grids[each, self.agent_pos[:, 0]+1, self.agent_pos[:, 1], 0] == 8
-        left_goal = self.grids[each, self.agent_pos[:, 0], self.agent_pos[:, 1]-1, 0] == 8
-        up_goal = self.grids[each, self.agent_pos[:, 0]-1, self.agent_pos[:, 1], 0] == 8
-
-        can_move = (~torch.stack([
-            right_wall | right_door | right_goal,
-            down_wall | down_door | down_goal,
-            left_wall | left_door | left_goal,
-            up_wall | up_door | up_goal,
-        ], dim=1))[each, directions] # N,
-
-        # move forward
-        next_agent_pos = (torch.tensor([
-            [0, 1],
+        # # Map of agent direction indices to vectors
+        # DIR_TO_VEC = [
+        #     # Pointing right (positive X)
+        #     np.array((1, 0)),
+        #     # Down (positive Y)
+        #     np.array((0, 1)),
+        #     # Pointing left (negative X)
+        #     np.array((-1, 0)),
+        #     # Up (negative Y)
+        #     np.array((0, -1)),
+        # ]
+        front_pos = (torch.tensor([
             [1, 0],
+            [0, 1],
+            [-0, 0],
             [0, -1],
-            [-1, 0],
         ], device=actions.device)[None, :, :] + self.agent_pos[:, None, :])[each, directions] # N, 2
 
-        next_agent_pos = torch.where(can_move[:, None]*actions[:, None].bool(), next_agent_pos, self.agent_pos)
-        done = torch.stack([
-            right_goal,
-            down_goal,
-            left_goal,
-            up_goal,
-        ], dim=1)[each, directions]*actions.bool()
+        #print('front_pos', front_pos)
+
+        # if facing wall or closed door, don't move
+        # if facing goal, don't move, end episode
+        next_wall = self.grids[each, front_pos[:, 0], front_pos[:, 1], 0] == 2
+        next_door = self.grids[each, front_pos[:, 0], front_pos[:, 1], 2] == 1
+        next_goal = self.grids[each, front_pos[:, 0], front_pos[:, 1], 0] == 8 # N,2
+
+        can_move = ~(next_wall | next_door | next_goal) # N,
+
+        #print('can_move', can_move, 'dir', directions.data)
+
+        next_agent_pos = torch.where(can_move[:, None]*actions[:, None].bool(), front_pos, self.agent_pos)
+        done = next_goal*actions.bool()
 
         return next_agent_pos, done
 
@@ -275,17 +268,21 @@ class BatchMinigrid(nn.Module):
         next_agent_dir = self._rotate(rotate_right.int() - rotate_left.int())
         self.agent_dir.data = next_agent_dir
         self._toggle_(toggle)
-        next_agent_pos, done = self._move_forward(move)
+        next_agent_pos, has_goal = self._move_forward(move)
         self.agent_pos.data = next_agent_pos
 
+        self.step_counts += 1
+        done = has_goal | (self.step_counts >= 140) # 140 is the timeout, Nrooms*20
+        self.reset(done)
+
         obs = self.render_fpv()
-        reward = done.long()
+        reward = has_goal.float()
         info = {'fast': True}
 
         if test_slow:
             slow_obs, slow_reward, slow_done, slow_info = self.step_slow(actions)
             assert torch.allclose(obs, slow_obs)
-            assert torch.allclose(reward, slow_reward)
+            assert torch.allclose(reward.float(), slow_reward.float())
             assert torch.allclose(done, slow_done)
             print('slow_info', slow_info)
 
@@ -311,7 +308,12 @@ class Mask(nn.Module):
         self.step.weight.data = 0.3 * torch.tensor([[1, 1, 1],
                                                     [1, 2, 1],
                                                     [1, 1, 1]]).view(1,1,3,3)
-        self.steps = 4
+        self.steps = 5
+
+        # self.connect = nn.Conv2d(1, 1, kernel_size=3, padding=1, bias=False)
+        # self.connect.weight.data = 0.3 * torch.tensor([[0, 1, 0],
+        #                                                [1, 2, 1],
+        #                                                [0, 1, 0]]).view(1,1,3,3)
 
     def forward(
         self,

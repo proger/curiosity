@@ -4,14 +4,14 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch 
+import torch
 import typing
-import gym 
+import gym
 import threading
 from torch import multiprocessing as mp
 import logging
 import traceback
-import os 
+import os
 import numpy as np
 
 from src.core import prof
@@ -42,7 +42,7 @@ COMPLETE_MOVEMENT = [
     ['A'],
     ['B'],
     ['A', 'B'],
-] 
+]
 
 shandle = logging.StreamHandler()
 shandle.setFormatter(
@@ -67,7 +67,7 @@ def create_env(flags):
                 clip_rewards=False,
                 frame_stack=True,
                 scale=False,
-                fire=True)) 
+                fire=True))
         env = JoypadSpace(env, COMPLETE_MOVEMENT)
         return env
     else:
@@ -77,8 +77,111 @@ def create_env(flags):
                 clip_rewards=False,
                 frame_stack=True,
                 scale=False,
-                fire=False)) 
+                fire=False))
         return env
+
+import torch.nn as nn
+
+class ActorPool(nn.Module):
+    def __init__(self, policy, flags):
+        super().__init__()
+
+        self.batch_size = flags.batch_size
+        self.unroll_length = flags.unroll_length
+
+        from gym_minigrid.fast_minigrid import BatchMinigrid
+        env_seeds = torch.randint(0, 2**32 - 1, (self.batch_size,)).tolist()
+        self.batch_env = BatchMinigrid(seeds=env_seeds)
+        self.policy = policy
+
+        self.unroll_partial_obs = []
+        self.unroll_reward = []
+        self.unroll_done = []
+        self.unroll_action = []
+        self.unroll_policy_logits = []
+        self.unroll_episode_return = []
+
+    @torch.no_grad()
+    def prepare(self):
+        # env_output frame
+        # ! env_output reward
+        # ! env_output done
+        # ! env_output episode_return
+        # env_output episode_step
+        # env_output episode_win
+        # env_output carried_col
+        # env_output carried_obj
+        # ! env_output partial_obs
+        # ! agent_output policy_logits
+        # agent_output baseline
+        # ! agent_output action
+
+        device = next(self.policy.parameters()).device
+        done = torch.zeros(self.batch_size, dtype=torch.bool, device=device)
+        reward = torch.zeros(self.batch_size, dtype=torch.float32, device=device)
+
+        self.agent_state = self.policy.initial_state(batch_size=self.batch_size)
+
+        partial_obs = self.batch_env.render_fpv()[None, ...]
+        agent_output, unused_state = self.policy({
+            'partial_obs': partial_obs,
+            'done': done,
+        }, self.agent_state)
+
+        self.unroll_partial_obs.append(partial_obs)
+        self.unroll_done.append(done)
+        self.unroll_reward.append(reward)
+        self.unroll_action.append(agent_output['action'])
+        self.unroll_policy_logits.append(agent_output['policy_logits'])
+        self.unroll_episode_return.append(reward)
+
+    @torch.no_grad()
+    def forward(self):
+        device = next(self.policy.parameters()).device
+
+        partial_obs = self.unroll_partial_obs[-1]
+        done = self.unroll_done[-1]
+
+        for t in range(self.unroll_length):
+            agent_output, self.agent_state = self.policy({
+                'partial_obs': partial_obs,
+                'done': done,
+            }, self.agent_state)
+
+            partial_obs, reward, done, _ = self.batch_env.step(agent_output['action'][0])
+            partial_obs = partial_obs[None, ...]
+            # if done we need to reset that environment
+
+            self.unroll_partial_obs.append(partial_obs)
+            self.unroll_reward.append(reward)
+            self.unroll_done.append(done)
+            self.unroll_action.append(agent_output['action'])
+            self.unroll_policy_logits.append(agent_output['policy_logits'])
+            self.unroll_episode_return.append(reward) # ok for sparse rewards
+
+        batch = {
+            'partial_obs': torch.cat(self.unroll_partial_obs, dim=0),
+            'reward': torch.stack(self.unroll_reward),
+            'done': torch.stack(self.unroll_done),
+            'action': torch.cat(self.unroll_action, dim=0),
+            'policy_logits': torch.cat(self.unroll_policy_logits, dim=0),
+            'episode_return': torch.stack(self.unroll_episode_return),
+        }
+
+        # remove all but the last frame in the unroll
+        self.unroll_partial_obs = self.unroll_partial_obs[-1:]
+        self.unroll_reward = self.unroll_reward[-1:]
+        self.unroll_done = self.unroll_done[-1:]
+        self.unroll_action = self.unroll_action[-1:]
+        self.unroll_policy_logits = self.unroll_policy_logits[-1:]
+        self.unroll_episode_return = self.unroll_episode_return[-1:]
+
+        episode_returns = batch['episode_return'][batch['done']]
+        print(torch.where(batch['done']))
+        return batch, self.agent_state
+
+
+
 
 
 def get_batch(free_queue: mp.SimpleQueue,
