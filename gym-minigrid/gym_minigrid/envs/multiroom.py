@@ -364,6 +364,11 @@ register(
 )
 
 register(
+    id='MiniGrid-MultiRoom-N7-S4-fast-v0',
+    entry_point='gym_minigrid.envs:MultiRoomEnvN7S4'
+)
+
+register(
     id='MiniGrid-MultiRoom-N7-S8-v0',
     entry_point='gym_minigrid.envs:MultiRoomEnvN7S8'
 )
