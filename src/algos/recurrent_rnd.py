@@ -390,6 +390,27 @@ def train(flags):
 
     meta_generator = torch.Generator().manual_seed(flags.rnd_meta_seed)
 
+    def checkpoint(frames):
+        if flags.disable_checkpoint:
+            return
+        if flags.save_all_checkpoints:
+            path = Path(checkpointpath).parent / f'{frames}.pt'
+        else:
+            path = Path(checkpointpath)
+        log.info('Saving checkpoint to %s', str(path))
+        torch.save({
+            'model_state_dict': model.state_dict(),
+            'random_target_network_state_dict': random_target_network.state_dict(),
+            'predictor_network_state_dict': predictor_network.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'predictor_optimizer_state_dict': predictor_optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict(),
+            'flags': vars(flags),
+        }, str(path))
+        test(model, random_target_network, predictor_network,
+             env=None, flags=flags, videoroot=path.parent,
+             seeds=[3],
+             grouped_random_target_network=grouped_random_target_network)
 
     def batch_and_learn(i, lock=threading.Lock()):
         """Thread target for the learning process."""
@@ -420,6 +441,10 @@ def train(flags):
                 save_file(megabuffer, exproot / f'{frames:010d}.megabuffer')
                 megabuffer = None
 
+            # take a checkpoint after T*B*500 frames (ignores save_interval)
+            if frames % (T * B * 500):
+                checkpoint(frames)
+
         if i == 0:
             log.info('Batch and learn: %s', timings.summary())
 
@@ -434,39 +459,12 @@ def train(flags):
         threads.append(thread)
 
 
-    def checkpoint(frames):
-        if flags.disable_checkpoint:
-            return
-        if flags.save_all_checkpoints:
-            path = Path(checkpointpath).parent / f'{frames}.pt'
-        else:
-            path = Path(checkpointpath)
-        log.info('Saving checkpoint to %s', str(path))
-        torch.save({
-            'model_state_dict': model.state_dict(),
-            'random_target_network_state_dict': random_target_network.state_dict(),
-            'predictor_network_state_dict': predictor_network.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'predictor_optimizer_state_dict': predictor_optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
-            'flags': vars(flags),
-        }, str(path))
-        test(model, random_target_network, predictor_network,
-             env=None, flags=flags, videoroot=path.parent,
-             seeds=[3],
-             grouped_random_target_network=grouped_random_target_network)
-
     timer = timeit.default_timer
     try:
-        last_checkpoint_time = timer()
         while frames < flags.total_frames:
             start_frames = frames
             start_time = timer()
             time.sleep(5)
-
-            if timer() - last_checkpoint_time > flags.save_interval * 60:  
-                checkpoint(frames)
-                last_checkpoint_time = timer()
 
             fps = (frames - start_frames) / (timer() - start_time)
             
