@@ -301,6 +301,8 @@ def act(i: int, free_queue: mp.SimpleQueue, full_queue: mp.SimpleQueue,
 
         gym_env = create_env(flags)
         seed = i ^ int.from_bytes(os.urandom(4), byteorder='little')
+        print('actor seed', i, seed)
+        log.info('Actor %i started, seed %i.', i, seed)
         gym_env.seed(seed)
         
         if flags.num_input_frames > 1:

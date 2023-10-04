@@ -44,7 +44,7 @@ def meta_predictor_step(
     *,
     random_target_network,
     grouped_random_target_network,
-    predictor_network,
+    predictor_network: models.MinigridStateSequenceNet,
     batch,
     done,
     flags,
@@ -55,7 +55,8 @@ def meta_predictor_step(
         models.reinit_conv2d_(random_target_network, seed=flags.rnd_seed)
         global_random_embedding = random_target_network(batch['partial_obs'][1:].to(device=flags.device))
 
-        seed = torch.randint(low=20, high=32788, size=(1,), generator=generator).item()
+        #seed = torch.randint(low=20, high=32788, size=(1,), generator=generator).item()
+        seed = torch.randint(low=20, high=2**32-1, size=(1,), generator=generator).item()
         models.reinit_conv2d_(grouped_random_target_network, seed=seed)
         local_random_embedding = grouped_random_target_network(batch['partial_obs'][1:].to(device=flags.device))
 
@@ -76,8 +77,13 @@ def meta_predictor_step(
         rnd_loss = flags.rnd_global_loss_weight * global_rnd_loss + (1-flags.rnd_global_loss_weight) * local_rnd_loss
 
     local_intrinsic_rewards = torch.norm(local_predicted_embedding.detach() - local_random_embedding.detach(), dim=2, p=2)
+    local_intrinsic_rewards *= flags.rnd_local_reward_weight
     global_intrinsic_rewards = torch.norm(global_predicted_embedding.detach() - global_random_embedding.detach(), dim=2, p=2)
-    intrinsic_rewards = flags.rnd_global_reward_weight * global_intrinsic_rewards + flags.rnd_local_reward_weight * local_intrinsic_rewards
+    global_intrinsic_rewards *= flags.rnd_global_reward_weight
+    if flags.rnd_global_local_interaction == 'add':
+        intrinsic_rewards = global_intrinsic_rewards + local_intrinsic_rewards
+    else:
+        intrinsic_rewards = global_intrinsic_rewards * local_intrinsic_rewards
     intrinsic_rewards *= flags.intrinsic_reward_coef
     return intrinsic_rewards, rnd_loss
 

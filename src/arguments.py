@@ -126,6 +126,8 @@ parser.add_argument('--rnd_local_reward_weight', default=0.5, type=float,
                     help='Weight of the local random embedding predictor for Recurrent RND.')
 parser.add_argument('--rnd_global_reward_weight', default=0.5, type=float,
                     help='Weight of the local random embedding predictor for Recurrent RND.')
+parser.add_argument('--rnd_global_local_interaction', choices=['add', 'multiply'], default='add', type=str,
+                    help='How to combine global and local rewards')
 parser.add_argument('--rnd_seed', default=0, type=int,
                     help='Seed for the RND network.')
 parser.add_argument('--rnd_meta_seed', default=1516516984916, type=int,

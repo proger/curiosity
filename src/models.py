@@ -470,6 +470,11 @@ class MinigridStateSequenceNet(nn.Module):
 
         self.core = nn.LSTMCell(self.hidden_size, self.hidden_size, 1)
         self.readout = nn.Linear(self.hidden_size, 128, bias=True)
+        # self.readout = nn.Sequential(
+        #     nn.Linear(self.hidden_size, self.hidden_size, bias=True),
+        #     nn.ELU(),
+        #     nn.Linear(self.hidden_size, 128, bias=True),
+        # )
 
     def initial_state(self, batch_size):
         device = next(self.parameters()).device

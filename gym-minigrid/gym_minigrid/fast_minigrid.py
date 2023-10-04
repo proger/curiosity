@@ -331,7 +331,7 @@ class BatchMinigrid(nn.Module):
             reward.append(reward1)
             done.append(done1)
             info.append(info1)
-        return torch.stack([torch.from_numpy(obs1['image']) for obs1 in obs]), torch.tensor(reward), torch.tensor(done), info
+        return torch.stack([torch.from_numpy(obs1['image']) for obs1 in obs]).to(device), torch.tensor(reward).to(device).float(), torch.tensor(done).to(device), info
 
 
 # XXX: this needs to mask out some occluded corners in subsequent rules to be fully compatible
